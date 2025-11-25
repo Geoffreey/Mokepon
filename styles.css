@@ -1,8 +1,8 @@
-.titulo {
-    color: aqua;
-    width: 310px;
-    height: 50px;
-    background-color: teal;
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&display=swap');
+
+body {
+    font-family: "Fredoka", cursive;
+    background-color: #041562;
 }
 
 #seleccionar-mascota {
@@ -12,13 +12,36 @@
     align-items: center;
 }
 
+.titulo {
+    color: white;
+    font-size: 32px;
+}
+
+.subtitulo {
+    color: white;
+}
+
+.tarjetas {
+    display: flex;
+    gap: 10px;
+}
+
 .tarjeta-de-mokepon {
-    width: 100px;
+    width: 180px;
     height: 100px;
-    background-color: aquamarine;
+    background-color: #11468f;
     box-sizing: border-box;
     margin: 10px;
     border: 1px solid hotpink;
+    border-radius: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+}
+
+.tarjeta-de-mokepon img {
+    width: 80px;
 }
 
 input {
