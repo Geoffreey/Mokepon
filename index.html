@@ -15,21 +15,22 @@
         <h2 class="subtitulo">Elegir mascota:</h2>
 
         <div class="tarjetas">
+             <input type="radio" name="mascota" id="hipodoge">
             <label class="tarjeta-de-mokepon" for="hipodoge">
                 <p>Hipodoge</p>
                 <img src="./assets/mokepons_mokepon_hipodoge_attack.png" alt="Hipodoge">
             </label>
-            <input type="radio" name="mascota" id="hipodoge">
 
+            <input type="radio" name="mascota" id="capipepo">
             <label class="tarjeta-de-mokepon" for="capipepo">
                 <p>Capipepo</p>
                 <img src="./assets/mokepons_mokepon_capipepo_attack.png" alt="Capipepo"></label>
-            <input type="radio" name="mascota" id="capipepo">
 
+
+            <input type="radio" name="mascota" id="ratigueya">
             <label class="tarjeta-de-mokepon" for="ratigueya">
                 <p>Ratiweya</p>
                 <img src="./assets/mokepons_mokepon_ratigueya_attack.png" alt="Ratiweya"></label></label>
-            <input type="radio" name="mascota" id="ratigueya">
         </div>
 
         <button id="boton-mascota">Seleccionar</button>
@@ -40,7 +41,7 @@
 
         <h2 class="subtitulo">Elge tu ataque</h2>
 
-        <div class="">
+        <div class="tarjetas-ataques">
             <button id="boton-fuego" class="boton-de-ataque">Fuego🔥</button>
             <button id="boton-agua" class="boton-de-ataque">Agua💧</button>
             <button id="boton-tierra" class="boton-de-ataque">Tierra🌱</button>
@@ -56,12 +57,12 @@
         </div>
 
         <div class="ataques">
-            <div>
+            <div class="ataques-jugador">
                 <p id="vidas-jugador">3</p>
                 <p id="mascota-jugador"></p>
                 <div id="ataques-del-jugador"></div>
             </div>
-            <div>
+            <div class="ataques-enemigo">
                 <p id="vidas-enemigo">3</p>
                 <div id="ataques-del-enemigo"></div>
                 <p id="mascota-enemigo"></p>
