@@ -19,6 +19,7 @@ const sectionMensajes = document.getElementById('resultado')
 const ataquesDelJugador = document.getElementById('ataques-del-jugador')
 const ataquesDelEnemigo = document.getElementById('ataques-del-enemigo')
 const contenedoTarjetas = document.getElementById('contenedor-tarjetas')
+const contenedorAtaques = document.getElementById('contenedor-ataques')
 
 let mokepones = []
 let ataqueJugador
@@ -27,6 +28,8 @@ let opcionDeMokepones
 let inputHipodoge
 let inputCapipepo
 let inputRatigueya
+let mascotaJugador
+let ataquesMokepon
 let vidasJugador = 3
 let vidasEnemigo = 3
 
@@ -101,14 +104,36 @@ function seleccionarMascotaJugador() {
 
     if (inputHipodoge.checked) {
         spanMascotaJugador.innerHTML = inputHipodoge.id
+        mascotaJugador = inputHipodoge.id
     } else if (inputCapipepo.checked) {
         spanMascotaJugador.innerHTML = inputCapipepo.id
+        mascotaJugador = inputCapipepo.id
     } else if (inputRatigueya.checked) {
         spanMascotaJugador.innerHTML = inputRatigueya.id
+        mascotaJugador = inputRatigueya.id
     } else {
         alert('Selecciona una mascota')
     }
+
+    extraerAtaques(mascotaJugador)
     seleccionarMascotaEnemigo()
+}
+
+function extraerAtaques(mascotaJugador) { 
+    let ataques
+    for (let i = 0; i < mokepones.length; i++ ) {
+        if (mascotaJugador === mokepones[i].nombre) {
+            ataques = mokepones[i].ataques
+        }
+
+        mostrarAtaques(ataques)
+    }
+}
+
+function mostrarAtaques(ataques) {
+    ataques.forEach(ataque) => {
+        ataques = 
+    }
 }
 
 function seleccionarMascotaEnemigo() {
