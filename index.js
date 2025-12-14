@@ -2,7 +2,7 @@ const express = require("express")
 const cors = require("cors")
 
 const app = express()
-
+http://MacBook-Air-de-Geoffreey.local:8080
 app.use(express.static('public'))
 app.use(cors())
 app.use(express.json())
