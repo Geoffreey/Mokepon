@@ -1,0 +1,12 @@
+services:
+  mokepon:
+    build: .
+    container_name: mokepon
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped
