@@ -5,6 +5,7 @@ const { randomUUID, randomInt } = require("crypto")
 const { scryptSync, timingSafeEqual, createHash } = require("crypto")
 const fs = require("fs")
 const path = require("path")
+const nodemailer = require("nodemailer")
 const app = express()
 const PORT = process.env.PORT || 8080
 const esProduccion = process.env.NODE_ENV === "production"
@@ -25,6 +26,18 @@ const DURACION_CODIGO_MS = 15 * 60 * 1000
 const RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || ""
 const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || ""
 const CAPTCHA_ACTIVO = Boolean(RECAPTCHA_SITE_KEY && RECAPTCHA_SECRET_KEY)
+const SMTP_CONFIGURADO = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD && process.env.EMAIL_FROM)
+const transporteCorreo = SMTP_CONFIGURADO ? nodemailer.createTransport({
+  host:process.env.SMTP_HOST,
+  port:Number(process.env.SMTP_PORT || 465),
+  secure:String(process.env.SMTP_SECURE ?? "true").toLowerCase() === "true",
+  auth:{ user:process.env.SMTP_USER, pass:process.env.SMTP_PASSWORD },
+  connectionTimeout:8000,
+  greetingTimeout:8000,
+  socketTimeout:12000,
+  disableFileAccess:true,
+  disableUrlAccess:true
+}) : null
 let cuentas = []
 try { cuentas = JSON.parse(fs.readFileSync(RUTA_DATOS, "utf8")).cuentas || [] } catch (error) { if (error.code !== "ENOENT") throw error }
 cuentas.forEach((cuenta)=>{if(cuenta.activa===undefined)cuenta.activa=true})
@@ -59,9 +72,8 @@ async function verificarCaptcha(token,req) {
 }
 function generarCodigo(cuenta) { const codigo=String(randomInt(100000,1000000)),reenvioToken=randomUUID()+randomUUID();cuenta.activacion={codigoHash:hashToken(codigo),reenvioHash:hashToken(reenvioToken),expira:Date.now()+DURACION_CODIGO_MS,intentos:0};return {codigo,reenvioToken} }
 async function enviarCodigo(cuenta,codigo) {
-  if(!process.env.RESEND_API_KEY||!process.env.EMAIL_FROM){if(!esProduccion){console.log(`[DESARROLLO] Código de activación para ${cuenta.usuario}: ${codigo}`);return}throw new Error("Servicio de correo no configurado")}
-  const respuesta=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,"Content-Type":"application/json","User-Agent":"Mokepon/1.0","Idempotency-Key":`activacion-${cuenta.id}-${cuenta.activacion.expira}`},body:JSON.stringify({from:process.env.EMAIL_FROM,to:[cuenta.correo],subject:"Activa tu cuenta de Guardianes del Mayab",text:`Tu código de activación es: ${codigo}\n\nExpira en 15 minutos. Si no solicitaste esta cuenta, ignora este mensaje.`}),signal:AbortSignal.timeout(8000)})
-  if(!respuesta.ok)throw new Error("No se pudo enviar el correo de activación")
+  if(!transporteCorreo){if(!esProduccion){console.log(`[DESARROLLO] Código de activación para ${cuenta.usuario}: ${codigo}`);return}throw new Error("Servicio de correo no configurado")}
+  await transporteCorreo.sendMail({from:process.env.EMAIL_FROM,to:cuenta.correo,subject:"Activa tu cuenta de Guardianes del Mayab",text:`Tu código de activación es: ${codigo}\n\nExpira en 15 minutos. Si no solicitaste esta cuenta, ignora este mensaje.`})
 }
 function estadisticas(cuenta) {
   const historial=cuenta.historial||[], batallas=cuenta.batallas??historial.length, victorias=cuenta.victorias??historial.filter((b)=>b.resultado==="victoria").length, derrotas=cuenta.derrotas??historial.filter((b)=>b.resultado==="derrota").length, empates=cuenta.empates??batallas-victorias-derrotas

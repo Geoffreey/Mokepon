@@ -14,7 +14,11 @@ services:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN es obligatorio}
       RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:?RECAPTCHA_SITE_KEY es obligatorio}
       RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:?RECAPTCHA_SECRET_KEY es obligatorio}
-      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY es obligatorio}
+      SMTP_HOST: ${SMTP_HOST:-mail.privateemail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER es obligatorio}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD es obligatorio}
       EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM es obligatorio}
       IPINFO_TOKEN: ${IPINFO_TOKEN:-}
       DATA_FILE: /app/data/accounts.json

@@ -24,18 +24,22 @@ Configura estas variables en `.env` antes de desplegar:
 ```text
 RECAPTCHA_SITE_KEY=clave_publica_recaptcha_v2
 RECAPTCHA_SECRET_KEY=clave_privada_recaptcha_v2
-RESEND_API_KEY=re_xxxxxxxxx
-EMAIL_FROM=Guardianes del Mayab <cuentas@tu-dominio.com>
+SMTP_HOST=mail.privateemail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=cuentas@tu-dominio.com
+SMTP_PASSWORD=contraseña_o_clave_de_aplicacion
+EMAIL_FROM="Guardianes del Mayab <cuentas@tu-dominio.com>"
 IPINFO_TOKEN=token_ipinfo
 ```
 
 Las claves de reCAPTCHA deben corresponder al tipo **v2 Checkbox** y tener
-autorizado el dominio del juego. Resend requiere verificar el dominio del
-remitente. `IPINFO_TOKEN` es opcional; sin él se conserva la IP y, cuando el
+autorizado el dominio del juego. El correo utiliza SMTP cifrado de Namecheap
+Private Email; se recomienda una contraseña de aplicación. `IPINFO_TOKEN` es opcional; sin él se conserva la IP y, cuando el
 proxy la proporciona, el país, pero no se consulta ciudad o región.
 
 Los códigos de activación duran 15 minutos y admiten cinco intentos. En
-desarrollo, si no hay credenciales de Resend, el código se imprime únicamente
+desarrollo, si no hay credenciales SMTP, el código se imprime únicamente
 en el log del contenedor. Este comportamiento está deshabilitado en producción.
 
 La auditoría se escribe como JSON Lines en `data/audit.jsonl` y rota al llegar

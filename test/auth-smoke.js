@@ -9,7 +9,7 @@ test("registra, activa e inicia sesión y genera auditoría", async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), "mokepon-auth-"))
   const port = 18080 + Math.floor(Math.random() * 1000)
   const server = spawn(process.execPath, [path.join(__dirname, "..", "index.js")], {
-    env:{ ...process.env, PORT:String(port), NODE_ENV:"development", DATA_FILE:path.join(dir,"accounts.json"), AUDIT_FILE:path.join(dir,"audit.jsonl"), RECAPTCHA_SITE_KEY:"", RECAPTCHA_SECRET_KEY:"", RESEND_API_KEY:"", EMAIL_FROM:"" },
+    env:{ ...process.env, PORT:String(port), NODE_ENV:"development", DATA_FILE:path.join(dir,"accounts.json"), AUDIT_FILE:path.join(dir,"audit.jsonl"), RECAPTCHA_SITE_KEY:"", RECAPTCHA_SECRET_KEY:"", SMTP_HOST:"", SMTP_USER:"", SMTP_PASSWORD:"", EMAIL_FROM:"" },
     stdio:["ignore","pipe","pipe"]
   })
   t.after(() => server.kill("SIGTERM"))
