@@ -58,3 +58,14 @@ En producción se habilitan CSP, HSTS y las demás cabeceras de Helmet. Las
 solicitudes HTTP se redirigen al origen configurado; si falta
 `PUBLIC_ORIGIN`, se rechazan con `426 Upgrade Required` para evitar servir la
 aplicación accidentalmente por una conexión insegura.
+
+### Despliegue con Nginx Proxy Manager
+
+El archivo `compose.production.yml` no publica puertos en el host. Conecta el
+contenedor `mokepon_web` a la red externa `proxy_net`; Nginx Proxy Manager debe
+usar `mokepon_web` como hostname y `8080` como puerto interno.
+
+```bash
+cp .env.production.example .env.production
+docker compose --env-file .env.production -f compose.production.yml up -d --build
+```

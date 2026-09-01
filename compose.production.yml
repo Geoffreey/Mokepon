@@ -1,0 +1,43 @@
+name: mokepon
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mokepon:production
+    container_name: mokepon_web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN es obligatorio}
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:?RECAPTCHA_SITE_KEY es obligatorio}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:?RECAPTCHA_SECRET_KEY es obligatorio}
+      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY es obligatorio}
+      EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM es obligatorio}
+      IPINFO_TOKEN: ${IPINFO_TOKEN:-}
+      DATA_FILE: /app/data/accounts.json
+      AUDIT_FILE: /app/data/audit.jsonl
+    expose:
+      - "8080"
+    volumes:
+      - mokepon_data:/app/data
+    networks:
+      - proxy_net
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  mokepon_data:
+    name: mokepon_data
+
+networks:
+  proxy_net:
+    external: true
+    name: proxy_net
