@@ -1,65 +1,43 @@
-<!DOCTYPE html>
-<html>
-    <head>
-        <meta charset="utf-8" />
-        <title>MOKEPON!</title>
-        <link rel="stylesheet" href="./styles.css"> 
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    </head>
-    <body>
-        <section id="seleccionar-mascota">
-            <h1 class="titulo">Mokepono</h1> 
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#071914"><meta name="description" content="Guardianes del Mayab, aventura multijugador inspirada en Guatemala."><title>Guardianes del Mayab</title><link rel="stylesheet" href="./styles.css?v=20260830-5"></head>
+<body><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div><main class="game-shell">
+<header class="brand"><span class="brand-mark">✦</span><div><p class="eyebrow">Crónicas de Guatemala</p><p class="brand-name">Guardianes del Mayab</p></div><span id="jugador-badge" class="player-badge" hidden></span><button id="boton-cerrar-sesion" class="ghost-button" type="button" hidden>Cerrar sesión</button></header>
 
-            <h2 class="subtitulo">Elige tu mascota:</h2>
+<section id="registro-jugador" class="game-panel access-panel">
+  <div class="intro"><span class="chapter">Antes de la travesía</span><h1 class="titulo">Tu crónica te espera</h1><p class="subtitulo">Inicia sesión para conservar tus batallas, puntos y nivel.</p></div>
+  <div class="auth-tabs"><button id="tab-login" class="active" type="button">Iniciar sesión</button><button id="tab-registro" type="button">Crear cuenta</button></div>
+  <form id="form-nombre" class="name-form"><label for="usuario">Usuario</label><input id="usuario" maxlength="24" minlength="3" autocomplete="username" placeholder="tu_usuario" required><div id="campos-registro" hidden><label for="nombre-jugador">Nombre visible</label><input id="nombre-jugador" maxlength="20" minlength="2" autocomplete="nickname" placeholder="Nombre para la arena"><label for="correo">Correo electrónico</label><input id="correo" type="email" maxlength="254" autocomplete="email" placeholder="nombre@correo.com"></div><label for="clave">Contraseña</label><input id="clave" type="password" minlength="8" maxlength="72" autocomplete="current-password" placeholder="Mínimo 8 caracteres" required><div id="captcha-container" class="captcha-box"></div><p id="captcha-aviso" class="privacy-note"></p><button id="boton-auth" class="primary-button" type="submit">Entrar al mundo <span>→</span></button><p class="privacy-note">Por seguridad registramos IP, ubicación aproximada por IP, fecha y navegador de los accesos.</p><p id="error-registro" class="form-error" role="alert"></p></form>
+</section>
 
-            <div id='contenedorTarjetas' class="tarjetas">
-                
-            </div>
+<section id="activar-cuenta" class="game-panel access-panel" hidden><div class="intro"><span class="chapter">Verificación de seguridad</span><h1 class="titulo">Activa tu cuenta</h1><p id="mensaje-activacion" class="subtitulo">Enviamos un código de seis dígitos a tu correo.</p></div><form id="form-activacion" class="name-form"><label for="codigo-activacion">Código de activación</label><input id="codigo-activacion" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required><button class="primary-button" type="submit">Activar cuenta <span>→</span></button><button id="boton-reenviar" class="ghost-button" type="button">Reenviar código</button><p id="error-activacion" class="form-error" role="alert"></p></form></section>
 
-            <button id="boton-mascota">Seleccionar</button>
-        </section>
+<section id="seleccionar-sala" class="game-panel lobby-panel" hidden>
+  <div class="intro"><span class="chapter">Lobby · Cuatro territorios</span><h1 class="titulo">Elige una arena</h1><p class="subtitulo">Crea una sala o solicita acceso a una partida activa. El anfitrión decidirá quién entra.</p></div>
+  <section class="profile-card"><div><span class="chapter">Progreso del guardián</span><strong id="perfil-nivel">Nivel 1</strong></div><div class="profile-stats"><span><b id="perfil-puntos">0</b> puntos</span><span><b id="perfil-batallas">0</b> batallas</span><span><b id="perfil-victorias">0</b> victorias</span></div><div id="perfil-historial" class="battle-log"></div></section>
+  <div id="contenedor-salas" class="room-grid"></div><p id="estado-lobby" class="lobby-status" aria-live="polite"></p>
+</section>
 
-        <section id="ver-mapa">
-            <h2 class="subtitulo">Recorre el mapa con tu mokepon</h2> 
-            <canvas id="mapa"></canvas>
-            <button id="boton-arriba">Arriba</button>
-            <div>
-                <button id="boton-izquierda">Izquierda</button>
-                <button id="boton-abajo">Abajo</button>
-                <button id="boton-derecha">Derecha</button>
-            </div>
-        </section>
+<aside id="room-dock" class="room-dock" hidden>
+  <div><span class="chapter">Sala actual</span><strong id="nombre-sala-actual"></strong><span id="rol-sala" class="role-chip"></span></div>
+  <div id="miembros-sala" class="member-list"></div><div id="solicitudes-sala" class="requests-list"></div>
+  <button id="boton-salir-sala" class="ghost-button" type="button">Salir de la sala</button>
+</aside>
 
-        <section id="seleccionar-ataque">
-            <h1 class="titulo">Mokepon</h1>
+<section id="seleccionar-mascota" class="game-panel hero-panel" hidden>
+  <div class="intro"><span class="chapter">Capítulo I · El llamado</span><h1 class="titulo">Elige a tu guardián</h1><p class="subtitulo">Forma un vínculo y entra a la arena con los jugadores de tu sala.</p></div>
+  <div id="contenedorTarjetas" class="tarjetas" role="radiogroup" aria-label="Guardianes disponibles"></div>
+  <button id="boton-mascota" class="primary-button" type="button"><span>Entrar a la arena</span><span>→</span></button>
+</section>
 
-            <h2 class="subtitulo">Elige tu ataque:</h2>
+<section id="ver-mapa" class="game-panel map-panel" hidden>
+  <div class="section-heading"><div><span class="chapter">Capítulo II · Territorio compartido</span><h1 id="titulo-arena" class="titulo">Encuentra a tu rival</h1></div><p class="map-hint">Acércate a otro guardián para iniciar un duelo.</p></div>
+  <div class="arena-layout"><div><div class="canvas-frame"><canvas id="mapa"></canvas></div><div class="map-controls"><button id="boton-arriba" aria-label="Arriba">↑</button><button id="boton-izquierda" aria-label="Izquierda">←</button><button id="boton-abajo" aria-label="Abajo">↓</button><button id="boton-derecha" aria-label="Derecha">→</button></div></div>
+  <aside class="chat-panel"><div class="chat-heading"><span class="status-dot"></span><div><strong>Chat de la sala</strong><small>Solo participantes aceptados</small></div></div><div id="mensajes-chat" class="chat-messages" aria-live="polite"></div><form id="form-chat" class="chat-form"><input id="mensaje-chat" maxlength="180" autocomplete="off" placeholder="Escribe un mensaje…" aria-label="Mensaje"><button type="submit" aria-label="Enviar mensaje">↑</button></form></aside></div>
+</section>
 
-            <div id='contenedorAtaques' class="tarjetas-ataques">
-
-            </div>
-
-            <div id="mensajes">
-                <p id="resultado">Mucha suerte</p>
-
-                <section id="reiniciar">
-                    <button id="boton-reiniciar">Reiniciar</button>
-                </section>
-            </div>
-
-            <div class="ataques">
-                <div class="ataques-jugador">
-                    <p id="vidas-jugador">0</p>
-                    <p id="mascota-jugador"></p>
-                    <div id="ataques-del-jugador"></div>
-                </div>
-                <div class="ataques-enemigo">   
-                    <p id="vidas-enemigo">0</p>
-                    <p id="mascota-enemigo"></p>
-                    <div id="ataques-del-enemigo"></div>
-                </div>
-            </div>
-        </section>
-        <script src="./js/mokepon.js"></script>
-    </body>
-</html>
+<section id="seleccionar-ataque" class="game-panel battle-panel" hidden>
+  <div class="intro compact"><span class="chapter">Capítulo III · Duelo de sala</span><h1 class="titulo">Invoca tus fuerzas</h1><p class="subtitulo">Elige cinco ataques. Cada elemento domina a otro.</p></div>
+  <div class="element-guide"><span>🔥 Fuego vence Tierra</span><span>💧 Agua vence Fuego</span><span>🌿 Tierra vence Agua</span></div><div id="contenedorAtaques" class="tarjetas-ataques"></div>
+  <div id="mensajes" class="message-card" aria-live="polite"><span class="message-kicker">El oráculo dice</span><p id="resultado">Elige tu secuencia</p><section id="reiniciar" hidden><button id="boton-reiniciar" class="secondary-button" type="button">Volver a la arena</button></section></div>
+  <div class="ataques"><div class="ataques-jugador score-card"><span class="score-label">Tú · <b id="nombre-combate-jugador"></b></span><p id="mascota-jugador" class="guardian-name"></p><p id="vidas-jugador" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-jugador" class="attack-history"></div></div><div class="versus">VS</div><div class="ataques-enemigo score-card"><span class="score-label">Rival · <b id="nombre-combate-enemigo"></b></span><p id="mascota-enemigo" class="guardian-name"></p><p id="vidas-enemigo" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-enemigo" class="attack-history"></div></div></div>
+</section>
+</main><script src="./js/mokepon.js?v=20260830-5"></script></body></html>
