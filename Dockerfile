@@ -7,6 +7,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --chown=node:node . .
 
+RUN mkdir -p /app/data && chown node:node /app/data
+
 ENV PORT=8080
 ENV NODE_ENV=production
 
