@@ -95,6 +95,7 @@ const opcionesHelmet = {
       styleSrcAttr: ["'none'"],
       scriptSrc: ["'self'", "https://www.google.com", "https://www.gstatic.com"],
       frameSrc: ["'self'", "https://www.google.com", "https://recaptcha.google.com"],
+      connectSrc: ["'self'", "https://www.google.com", "https://www.gstatic.com", "https://recaptcha.google.com"],
       ...(esProduccion ? {} : { upgradeInsecureRequests: null })
     }
   }
