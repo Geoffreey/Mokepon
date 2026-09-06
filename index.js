@@ -3,9 +3,8 @@ const helmet = require("helmet")
 const { rateLimit } = require("express-rate-limit")
 const { randomUUID, randomInt } = require("crypto")
 const { scryptSync, timingSafeEqual, createHash } = require("crypto")
-const fs = require("fs")
-const path = require("path")
 const nodemailer = require("nodemailer")
+const db = require("./db")
 const app = express()
 const PORT = process.env.PORT || 8080
 const esProduccion = process.env.NODE_ENV === "production"
@@ -19,10 +18,9 @@ const MOKEPONES_VALIDOS = new Set(["B'alam", "Iq'", "Kabrak"])
 const ATAQUES_VALIDOS = new Set(["FUEGO", "AGUA", "TIERRA"])
 const MAX_JUGADORES_SALA = 8
 const jugadores = []
-const RUTA_DATOS = process.env.DATA_FILE || path.join(__dirname, "data", "accounts.json")
-const RUTA_AUDITORIA = process.env.AUDIT_FILE || path.join(__dirname, "data", "audit.jsonl")
 const DURACION_LOGIN_MS = 30 * 24 * 60 * 60 * 1000
 const DURACION_CODIGO_MS = 15 * 60 * 1000
+const DURACION_RESET_MS = 30 * 60 * 1000
 const RECAPTCHA_SITE_KEY = process.env.RECAPTCHA_SITE_KEY || ""
 const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || ""
 const CAPTCHA_ACTIVO = Boolean(RECAPTCHA_SITE_KEY && RECAPTCHA_SECRET_KEY)
@@ -38,16 +36,6 @@ const transporteCorreo = SMTP_CONFIGURADO ? nodemailer.createTransport({
   disableFileAccess:true,
   disableUrlAccess:true
 }) : null
-let cuentas = []
-try { cuentas = JSON.parse(fs.readFileSync(RUTA_DATOS, "utf8")).cuentas || [] } catch (error) { if (error.code !== "ENOENT") throw error }
-cuentas.forEach((cuenta)=>{if(cuenta.activa===undefined)cuenta.activa=true})
-
-function guardarCuentas() {
-  fs.mkdirSync(path.dirname(RUTA_DATOS), { recursive:true })
-  const temporal = `${RUTA_DATOS}.${process.pid}.tmp`
-  fs.writeFileSync(temporal, JSON.stringify({ cuentas }, null, 2), { mode:0o600 })
-  fs.renameSync(temporal, RUTA_DATOS)
-}
 const normalizarUsuario = (usuario) => typeof usuario === "string" ? usuario.trim().toLowerCase() : ""
 const usuarioValido = (usuario) => /^[a-z0-9_.-]{3,24}$/.test(normalizarUsuario(usuario))
 const claveValida = (clave) => typeof clave === "string" && clave.length >= 8 && clave.length <= 72
@@ -62,23 +50,24 @@ async function ubicacionIp(ip,paisProxy) {
   try { const respuesta=await fetch(`https://ipinfo.io/${encodeURIComponent(ip)}/json?token=${encodeURIComponent(process.env.IPINFO_TOKEN)}`,{signal:AbortSignal.timeout(2500)});if(!respuesta.ok)throw new Error("geo");const data=await respuesta.json();return { ciudad:data.city||null,region:data.region||null,pais:data.country||null,fuente:"ipinfo" } } catch { return { pais:null,fuente:"no-disponible" } }
 }
 async function auditar(req,evento,datos={}) {
-  const ip=ipCliente(req),paisProxy=String(req.get("cf-ipcountry")||"").slice(0,2)||null,ubicacion=await ubicacionIp(ip,paisProxy),entrada={fecha:new Date().toISOString(),evento,cuentaId:datos.cuentaId||null,usuario:datos.usuario||null,ip,ubicacion,agente:String(req.get("user-agent")||"").slice(0,300),exito:datos.exito!==false}
-  fs.mkdirSync(path.dirname(RUTA_AUDITORIA),{recursive:true});try{if(fs.statSync(RUTA_AUDITORIA).size>10*1024*1024)fs.renameSync(RUTA_AUDITORIA,`${RUTA_AUDITORIA}.1`)}catch(error){if(error.code!=="ENOENT")throw error}fs.appendFileSync(RUTA_AUDITORIA,`${JSON.stringify(entrada)}\n`,{mode:0o600})
+  const ip=ipCliente(req),paisProxy=String(req.get("cf-ipcountry")||"").slice(0,2)||null,ubicacion=await ubicacionIp(ip,paisProxy),entrada={fecha:new Date().toISOString(),evento,cuentaId:datos.cuentaId||null,actorId:datos.actorId||null,usuario:datos.usuario||null,ip,ubicacion,agente:String(req.get("user-agent")||"").slice(0,300),exito:datos.exito!==false}
+  await db.insertAudit(entrada)
 }
 async function verificarCaptcha(token,req) {
   if(!CAPTCHA_ACTIVO)return !esProduccion
   if(typeof token!=="string"||!token)return false
   try { const body=new URLSearchParams({secret:RECAPTCHA_SECRET_KEY,response:token,remoteip:ipCliente(req)});const respuesta=await fetch("https://www.google.com/recaptcha/api/siteverify",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body,signal:AbortSignal.timeout(5000)});const data=await respuesta.json();return data.success===true } catch { return false }
 }
-function generarCodigo(cuenta) { const codigo=String(randomInt(100000,1000000)),reenvioToken=randomUUID()+randomUUID();cuenta.activacion={codigoHash:hashToken(codigo),reenvioHash:hashToken(reenvioToken),expira:Date.now()+DURACION_CODIGO_MS,intentos:0};return {codigo,reenvioToken} }
+function generarCodigo() { const codigo=String(randomInt(100000,1000000)),reenvioToken=randomUUID()+randomUUID();return {codigo,reenvioToken,codigoHash:hashToken(codigo),reenvioHash:hashToken(reenvioToken),expira:Date.now()+DURACION_CODIGO_MS,intentos:0} }
 async function enviarCodigo(cuenta,codigo) {
   if(!transporteCorreo){if(!esProduccion){console.log(`[DESARROLLO] Código de activación para ${cuenta.usuario}: ${codigo}`);return}throw new Error("Servicio de correo no configurado")}
   await transporteCorreo.sendMail({from:process.env.EMAIL_FROM,to:cuenta.correo,subject:"Activa tu cuenta de Guardianes del Mayab",text:`Tu código de activación es: ${codigo}\n\nExpira en 15 minutos. Si no solicitaste esta cuenta, ignora este mensaje.`})
 }
-function estadisticas(cuenta) {
-  const historial=cuenta.historial||[], batallas=cuenta.batallas??historial.length, victorias=cuenta.victorias??historial.filter((b)=>b.resultado==="victoria").length, derrotas=cuenta.derrotas??historial.filter((b)=>b.resultado==="derrota").length, empates=cuenta.empates??batallas-victorias-derrotas
-  return { puntos:cuenta.puntos||0, nivel:Math.floor(batallas/5)+1, batallas, victorias, derrotas, empates, historial:historial.slice(-10).reverse() }
+async function enviarRestablecimiento(cuenta,enlace) {
+  if(!transporteCorreo){if(!esProduccion){console.log(`[DESARROLLO] Enlace de restablecimiento para ${cuenta.usuario}: ${enlace}`);return}throw new Error("Servicio de correo no configurado")}
+  await transporteCorreo.sendMail({from:process.env.EMAIL_FROM,to:cuenta.correo,subject:"Restablece tu contraseña de Guardianes del Mayab",text:`Hola ${cuenta.nombre},\n\nSoporte inició un restablecimiento de contraseña para tu cuenta. Abre este enlace para crear una nueva contraseña:\n${enlace}\n\nEl enlace expira en 30 minutos y solo puede utilizarse una vez. Si no solicitaste ayuda, comunícate con soporte.`})
 }
+const estadisticas = (cuenta) => db.getStatistics(cuenta.id)
 const salas = [
   { id:"selva", nombre:"Templos de la Selva", descripcion:"Pirámides entre ceibas y piedra antigua", mapa:"./assets/mokemap.png" },
   { id:"volcan", nombre:"Corazón del Volcán", descripcion:"Obsidiana, fuego y cumbres sagradas", mapa:"./assets/arena-volcan.png" },
@@ -119,12 +108,15 @@ class Jugador {
   constructor(id, token, nombre, cuentaId) { this.id=id; this.token=token; this.nombre=nombre; this.cuentaId=cuentaId; this.salaId=null; this.oponenteId=null; this.estadoJuego="lobby"; this.ultimaActividad=Date.now() }
   actualizarActividad() { this.ultimaActividad=Date.now() }
 }
-function autenticarCuenta(req,res,next) {
+async function autenticarCuenta(req,res,next) {
+  try {
   const auth=req.get("authorization")||"", token=auth.startsWith("Bearer ")?auth.slice(7):"", tokenHash=hashToken(token)
-  const cuenta=cuentas.find((c)=>c.sesiones?.some((s)=>s.tokenHash===tokenHash&&s.expira>Date.now()))
-  if(!cuenta)return res.status(401).json({error:"Inicia sesión nuevamente."})
+  const cuenta=await db.findAccountBySession(tokenHash)
+  if(!cuenta||cuenta.activa!==true)return res.status(401).json({error:"Inicia sesión nuevamente."})
   req.cuenta=cuenta;req.loginToken=token;next()
+  } catch(error) { next(error) }
 }
+function autorizarAdmin(req,res,next){if(req.cuenta.rol!=="admin")return res.status(403).json({error:"Acceso exclusivo para administradores."});next()}
 const buscarSala = (id) => salas.find((s) => s.id === id)
 const buscarJugador = (id) => jugadores.find((j) => j.id === id)
 const esMiembro = (sala, id) => Boolean(sala?.miembros.includes(id))
@@ -161,7 +153,7 @@ function resumenSala(sala,jugador) {
   return { id:sala.id,nombre:sala.nombre,descripcion:sala.descripcion,mapa:sala.mapa,disponible:!sala.creadorId,creador:creador?.nombre||null,jugadores:sala.miembros.length,capacidad:MAX_JUGADORES_SALA,soyCreador:sala.creadorId===jugador.id,soyMiembro:esMiembro(sala,jugador.id),solicitudPendiente:sala.solicitudes.includes(jugador.id) }
 }
 
-function crearLogin(cuenta) { const token=randomUUID()+randomUUID(), sesion={tokenHash:hashToken(token),expira:Date.now()+DURACION_LOGIN_MS}; cuenta.sesiones=(cuenta.sesiones||[]).filter((s)=>s.expira>Date.now()).slice(-4);cuenta.sesiones.push(sesion);guardarCuentas();return token }
+async function crearLogin(cuenta) { const token=randomUUID()+randomUUID();await db.createSession(cuenta.id,hashToken(token),Date.now()+DURACION_LOGIN_MS);return token }
 app.get("/auth/config",(req,res)=>res.json({captchaActivo:CAPTCHA_ACTIVO,recaptchaSiteKey:RECAPTCHA_SITE_KEY,modoDesarrollo:!esProduccion}))
 app.post("/auth/registro",limiteUnirse,async(req,res,next)=>{
   try {
@@ -171,31 +163,79 @@ app.post("/auth/registro",limiteUnirse,async(req,res,next)=>{
   if(!nombreValido(nombre))return res.status(400).json({error:"Usa un nombre visible de 2 a 20 caracteres."})
   if(!correoValido(correo))return res.status(400).json({error:"Ingresa un correo electrónico válido."})
   if(!claveValida(clave))return res.status(400).json({error:"La contraseña debe tener entre 8 y 72 caracteres."})
-  if(cuentas.some((c)=>c.usuario===usuario))return res.status(409).json({error:"Ese usuario ya existe."})
-  if(cuentas.some((c)=>c.correo===correo))return res.status(409).json({error:"Ese correo ya está registrado."})
-  const password=hashClave(clave), cuenta={id:randomUUID(),usuario,nombre,correo,passwordSalt:password.salt,passwordHash:password.hash,activa:false,puntos:0,historial:[],sesiones:[]},activacion=generarCodigo(cuenta);cuentas.push(cuenta);guardarCuentas()
-  try{await enviarCodigo(cuenta,activacion.codigo)}catch(error){cuentas=cuentas.filter((c)=>c.id!==cuenta.id);guardarCuentas();throw error}
+  if(await db.findAccountByUsername(usuario))return res.status(409).json({error:"Ese usuario ya existe."})
+  if(await db.findAccountByEmail(correo))return res.status(409).json({error:"Ese correo ya está registrado."})
+  const password=hashClave(clave), cuenta={id:randomUUID(),usuario,nombre,correo,passwordSalt:password.salt,passwordHash:password.hash,activa:false},activacion=generarCodigo()
+  try{await db.createPendingAccount(cuenta,activacion)}catch(error){if(error.code==="23505")return res.status(409).json({error:"El usuario o correo ya está registrado."});throw error}
+  try{await enviarCodigo(cuenta,activacion.codigo)}catch(error){await db.deleteAccount(cuenta.id);throw error}
   await auditar(req,"registro_pendiente",{cuentaId:cuenta.id,usuario});res.status(201).json({requiereActivacion:true,usuario,reenvioToken:activacion.reenvioToken,correoEnmascarado:correo.replace(/^(.{1,2}).*(@.*)$/,"$1***$2")})
   }catch(error){next(error)}
 })
 app.post("/auth/login",limiteUnirse,async(req,res,next)=>{
   try {
   if(!await verificarCaptcha(req.body?.captchaToken,req)){void auditar(req,"captcha_fallido",{usuario:normalizarUsuario(req.body?.usuario),exito:false});return res.status(400).json({error:"Completa la verificación reCAPTCHA."})}
-  const cuenta=cuentas.find((c)=>c.usuario===normalizarUsuario(req.body?.usuario))
+  const cuenta=await db.findAccountByUsername(normalizarUsuario(req.body?.usuario))
   if(!cuenta||!claveValida(req.body?.clave)||!verificarClave(req.body.clave,cuenta)){await auditar(req,"login_fallido",{usuario:normalizarUsuario(req.body?.usuario),exito:false});return res.status(401).json({error:"Usuario o contraseña incorrectos."})}
-  if(cuenta.activa!==true){const reenvioToken=randomUUID()+randomUUID();cuenta.activacion=cuenta.activacion||{};cuenta.activacion.reenvioHash=hashToken(reenvioToken);guardarCuentas();await auditar(req,"login_cuenta_inactiva",{cuentaId:cuenta.id,usuario:cuenta.usuario,exito:false});return res.status(403).json({error:"Debes activar tu cuenta antes de iniciar sesión.",requiereActivacion:true,usuario:cuenta.usuario,reenvioToken})}
-  const token=crearLogin(cuenta);await auditar(req,"login_exitoso",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.json({token,usuario:cuenta.usuario,nombre:cuenta.nombre,estadisticas:estadisticas(cuenta)})
+  if(cuenta.activa!==true){const reenvioToken=randomUUID()+randomUUID();await db.updateResendHash(cuenta.id,hashToken(reenvioToken));await auditar(req,"login_cuenta_inactiva",{cuentaId:cuenta.id,usuario:cuenta.usuario,exito:false});return res.status(403).json({error:"Debes activar tu cuenta antes de iniciar sesión.",requiereActivacion:true,usuario:cuenta.usuario,reenvioToken})}
+  const token=await crearLogin(cuenta);await auditar(req,"login_exitoso",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.json({token,usuario:cuenta.usuario,nombre:cuenta.nombre,estadisticas:await estadisticas(cuenta)})
   }catch(error){next(error)}
 })
-app.post("/auth/activar",limiteActivacion,async(req,res,next)=>{try{const usuario=normalizarUsuario(req.body?.usuario),cuenta=cuentas.find((c)=>c.usuario===usuario),codigo=String(req.body?.codigo||"");if(!cuenta||cuenta.activa===true)return res.status(400).json({error:"Solicitud de activación inválida."});if(!cuenta.activacion||cuenta.activacion.expira<Date.now()||cuenta.activacion.intentos>=5)return res.status(400).json({error:"El código expiró. Solicita uno nuevo."});cuenta.activacion.intentos++;if(!/^\d{6}$/.test(codigo)||hashToken(codigo)!==cuenta.activacion.codigoHash){guardarCuentas();await auditar(req,"activacion_fallida",{cuentaId:cuenta.id,usuario,exito:false});return res.status(400).json({error:"Código incorrecto."})}cuenta.activa=true;delete cuenta.activacion;const token=crearLogin(cuenta);await auditar(req,"cuenta_activada",{cuentaId:cuenta.id,usuario});res.json({token,usuario,nombre:cuenta.nombre,estadisticas:estadisticas(cuenta)})}catch(error){next(error)}})
-app.post("/auth/reenviar-codigo",limiteActivacion,async(req,res,next)=>{try{const cuenta=cuentas.find((c)=>c.usuario===normalizarUsuario(req.body?.usuario)),reenvioToken=String(req.body?.reenvioToken||"");if(!cuenta||cuenta.activa===true||!cuenta.activacion?.reenvioHash||hashToken(reenvioToken)!==cuenta.activacion.reenvioHash)return res.status(202).json({mensaje:"Si la solicitud es válida, enviaremos un código."});const activacion=generarCodigo(cuenta);guardarCuentas();await enviarCodigo(cuenta,activacion.codigo);await auditar(req,"codigo_reenviado",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.status(202).json({mensaje:"Código enviado.",reenvioToken:activacion.reenvioToken})}catch(error){next(error)}})
-app.get("/auth/perfil",autenticarCuenta,(req,res)=>{res.set("Cache-Control","no-store");res.json({usuario:req.cuenta.usuario,nombre:req.cuenta.nombre,estadisticas:estadisticas(req.cuenta)})})
-app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);req.cuenta.sesiones=req.cuenta.sesiones.filter((s)=>s.tokenHash!==tokenHash);guardarCuentas();await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
-app.post("/unirse",limiteUnirse,autenticarCuenta,(req,res)=>{
+app.post("/auth/activar",limiteActivacion,async(req,res,next)=>{try{const usuario=normalizarUsuario(req.body?.usuario),cuenta=await db.findAccountByUsername(usuario),codigo=String(req.body?.codigo||"");if(!cuenta||cuenta.activa===true)return res.status(400).json({error:"Solicitud de activación inválida."});if(!cuenta.activacion||cuenta.activacion.expira<Date.now()||cuenta.activacion.intentos>=5)return res.status(400).json({error:"El código expiró. Solicita uno nuevo."});await db.incrementActivationAttempts(cuenta.id);if(!/^\d{6}$/.test(codigo)||hashToken(codigo)!==cuenta.activacion.codigoHash){await auditar(req,"activacion_fallida",{cuentaId:cuenta.id,usuario,exito:false});return res.status(400).json({error:"Código incorrecto."})}await db.activateAccount(cuenta.id);const token=await crearLogin(cuenta);await auditar(req,"cuenta_activada",{cuentaId:cuenta.id,usuario});res.json({token,usuario,nombre:cuenta.nombre,estadisticas:await estadisticas(cuenta)})}catch(error){next(error)}})
+app.post("/auth/reenviar-codigo",limiteActivacion,async(req,res,next)=>{try{const cuenta=await db.findAccountByUsername(normalizarUsuario(req.body?.usuario)),reenvioToken=String(req.body?.reenvioToken||"");if(!cuenta||cuenta.activa===true||!cuenta.activacion?.reenvioHash||hashToken(reenvioToken)!==cuenta.activacion.reenvioHash)return res.status(202).json({mensaje:"Si la solicitud es válida, enviaremos un código."});const activacion=generarCodigo();await db.replaceActivation(cuenta.id,activacion);await enviarCodigo(cuenta,activacion.codigo);await auditar(req,"codigo_reenviado",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.status(202).json({mensaje:"Código enviado.",reenvioToken:activacion.reenvioToken})}catch(error){next(error)}})
+app.get("/auth/perfil",autenticarCuenta,async(req,res,next)=>{try{res.set("Cache-Control","no-store");res.json({usuario:req.cuenta.usuario,nombre:req.cuenta.nombre,estadisticas:await estadisticas(req.cuenta)})}catch(error){next(error)}})
+app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
+app.post("/auth/solicitar-restablecimiento",limiteActivacion,async(req,res,next)=>{try{
+  if(!await verificarCaptcha(req.body?.captchaToken,req))return res.status(400).json({error:"Completa la verificación reCAPTCHA."})
+  const correo=typeof req.body?.correo==="string"?req.body.correo.trim().toLowerCase():"",target=correoValido(correo)?await db.findAccountByEmail(correo):null
+  if(target){
+    const token=randomUUID()+randomUUID(),tokenHash=hashToken(token),base=origenPublico||new URL(`${req.protocol}://${req.get("host")}`),url=new URL("/restablecer/",base);url.searchParams.set("token",token)
+    await db.createPasswordReset(target.id,tokenHash,Date.now()+DURACION_RESET_MS,null)
+    try{await enviarRestablecimiento(target,url.toString());await auditar(req,"password_reset_requested",{cuentaId:target.id,usuario:target.usuario})}catch(error){await db.invalidatePasswordReset(tokenHash);console.error("No se pudo enviar un restablecimiento:",error.message);await auditar(req,"password_reset_email_failed",{cuentaId:target.id,usuario:target.usuario,exito:false})}
+  }else await auditar(req,"password_reset_unknown_email",{exito:false})
+  res.status(202).json({mensaje:"Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."})
+}catch(error){next(error)}})
+app.post("/auth/restablecer/validar",limiteActivacion,async(req,res,next)=>{try{const token=String(req.body?.token||"");if(token.length<60)return res.status(400).json({error:"El enlace no es válido o ya expiró."});const reset=await db.findPasswordReset(hashToken(token));if(!reset)return res.status(400).json({error:"El enlace no es válido o ya expiró."});res.set("Cache-Control","no-store");res.json({valido:true,nombre:reset.display_name})}catch(error){next(error)}})
+app.post("/auth/restablecer/completar",limiteActivacion,async(req,res,next)=>{try{const token=String(req.body?.token||""),clave=req.body?.clave;if(!claveValida(clave))return res.status(400).json({error:"La contraseña debe tener entre 8 y 72 caracteres."});const reset=await db.findPasswordReset(hashToken(token));if(!reset)return res.status(400).json({error:"El enlace no es válido o ya expiró."});const password=hashClave(clave),accountId=await db.consumePasswordReset(hashToken(token),password.salt,password.hash);if(!accountId)return res.status(400).json({error:"El enlace no es válido o ya expiró."});await auditar(req,"password_restored",{cuentaId:accountId,usuario:reset.username});res.json({mensaje:"Contraseña actualizada. Ya puedes iniciar sesión."})}catch(error){next(error)}})
+
+const paginaAdmin=(req)=>Math.max(1,Math.min(100000,Number.parseInt(req.query.page,10)||1))
+const limiteAdmin=(req)=>Math.max(1,Math.min(100,Number.parseInt(req.query.limit,10)||25))
+app.use("/admin/api",autenticarCuenta,autorizarAdmin,(req,res,next)=>{res.set("Cache-Control","no-store");next()})
+app.get("/admin/api/me",(req,res)=>res.json({id:req.cuenta.id,usuario:req.cuenta.usuario,nombre:req.cuenta.nombre}))
+app.get("/admin/api/resumen",async(req,res,next)=>{try{res.json(await db.getAdminSummary())}catch(error){next(error)}})
+app.get("/admin/api/usuarios",async(req,res,next)=>{try{const search=String(req.query.q||"").trim().slice(0,100);res.json(await db.listAdminUsers({search,page:paginaAdmin(req),limit:limiteAdmin(req)}))}catch(error){next(error)}})
+app.get("/admin/api/usuarios/:id",async(req,res,next)=>{try{const detail=await db.getAdminUser(req.params.id);if(!detail)return res.status(404).json({error:"Usuario no encontrado."});res.json(detail)}catch(error){next(error)}})
+app.patch("/admin/api/usuarios/:id/estado",limiteAcciones,async(req,res,next)=>{try{
+  if(typeof req.body?.activo!=="boolean")return res.status(400).json({error:"Estado inválido."})
+  if(req.params.id===req.cuenta.id&&!req.body.activo)return res.status(409).json({error:"No puedes bloquear tu propia cuenta."})
+  const result=await db.setAccountActive(req.params.id,req.body.activo);if(!result.rowCount)return res.status(404).json({error:"Usuario no encontrado."})
+  const target=result.rows[0];await auditar(req,req.body.activo?"admin_cuenta_activada":"admin_cuenta_bloqueada",{cuentaId:target.id,actorId:req.cuenta.id,usuario:target.username});res.json(target)
+}catch(error){next(error)}})
+app.delete("/admin/api/usuarios/:id/sesiones",limiteAcciones,async(req,res,next)=>{try{
+  const target=await db.findAccountById(req.params.id);if(!target)return res.status(404).json({error:"Usuario no encontrado."})
+  await db.revokeAccountSessions(target.id);await auditar(req,"admin_sesiones_revocadas",{cuentaId:target.id,actorId:req.cuenta.id,usuario:target.usuario});res.status(204).end()
+}catch(error){next(error)}})
+app.post("/admin/api/usuarios/:id/notas",limiteAcciones,async(req,res,next)=>{try{
+  const note=typeof req.body?.nota==="string"?req.body.nota.trim():"";if(!note||note.length>1000)return res.status(400).json({error:"La nota debe tener entre 1 y 1000 caracteres."})
+  const target=await db.findAccountById(req.params.id);if(!target)return res.status(404).json({error:"Usuario no encontrado."})
+  const result=await db.addSupportNote(target.id,req.cuenta.id,note);await auditar(req,"admin_nota_soporte",{cuentaId:target.id,actorId:req.cuenta.id,usuario:target.usuario});res.status(201).json({...result.rows[0],author:req.cuenta.nombre})
+}catch(error){next(error)}})
+app.post("/admin/api/usuarios/:id/restablecer-clave",limiteActivacion,async(req,res,next)=>{try{
+  const target=await db.findAccountById(req.params.id);if(!target)return res.status(404).json({error:"Usuario no encontrado."})
+  const token=randomUUID()+randomUUID(),tokenHash=hashToken(token),base=origenPublico||new URL(`${req.protocol}://${req.get("host")}`),url=new URL("/restablecer/",base);url.searchParams.set("token",token)
+  await db.createPasswordReset(target.id,tokenHash,Date.now()+DURACION_RESET_MS,req.cuenta.id)
+  try{await enviarRestablecimiento(target,url.toString())}catch(error){await db.invalidatePasswordReset(tokenHash);throw error}
+  await auditar(req,"admin_password_reset_requested",{cuentaId:target.id,actorId:req.cuenta.id,usuario:target.usuario});res.status(202).json({mensaje:SMTP_CONFIGURADO?"Enlace enviado por correo.":"Enlace generado en el log de desarrollo; configura SMTP para enviar correos.",enviado:SMTP_CONFIGURADO,correoEnmascarado:target.correo.replace(/^(.{1,2}).*(@.*)$/,"$1***$2")})
+}catch(error){next(error)}})
+app.get("/admin/api/logs",async(req,res,next)=>{try{
+  const event=String(req.query.event||"").trim().slice(0,64),search=String(req.query.q||"").trim().slice(0,100)
+  res.json(await db.listAuditEvents({event,search,page:paginaAdmin(req),limit:limiteAdmin(req)}))
+}catch(error){next(error)}})
+
+app.post("/unirse",limiteUnirse,autenticarCuenta,async(req,res,next)=>{try{
   let jugador=jugadores.find((j)=>j.cuentaId===req.cuenta.id)
   if(!jugador){jugador=new Jugador(randomUUID(),randomUUID(),req.cuenta.nombre,req.cuenta.id);jugadores.push(jugador)}
-  res.set("Cache-Control","no-store");res.status(201).json({id:jugador.id,token:jugador.token,nombre:jugador.nombre,estadisticas:estadisticas(req.cuenta)})
-})
+  res.set("Cache-Control","no-store");res.status(201).json({id:jugador.id,token:jugador.token,nombre:jugador.nombre,estadisticas:await estadisticas(req.cuenta)})
+}catch(error){next(error)}})
 app.get("/salas",autenticarJugador,(req,res)=>{ res.set("Cache-Control","no-store"); res.json({salas:salas.map((s)=>resumenSala(s,req.jugador)),salaActual:req.jugador.salaId}) })
 app.post("/salas/:salaId/crear",limiteAcciones,autenticarJugador,(req,res)=>{
   const sala=buscarSala(req.params.salaId)
@@ -259,33 +299,36 @@ app.post("/mokepon/:jugadorId/ataques",limiteAcciones,autenticarJugador,autoriza
   if(!Array.isArray(ataques)||ataques.length!==5||!ataques.every((a)=>ATAQUES_VALIDOS.has(a)))return res.status(400).json({error:"Secuencia de ataques inválida."})
   req.jugador.ataques=[...ataques];res.status(204).end()
 })
-app.get("/mokepon/:jugadorId/ataques",autenticarJugador,(req,res)=>{
+app.get("/mokepon/:jugadorId/ataques",autenticarJugador,async(req,res,next)=>{try{
   const rival=buscarJugador(req.params.jugadorId)
   if(!rival||req.jugador.oponenteId!==rival.id||rival.oponenteId!==req.jugador.id||rival.salaId!==req.jugador.salaId)return res.status(403).json({error:"Este jugador no es tu rival activo."})
-  if(rival.ataques?.length===5&&req.jugador.ataques?.length===5) registrarResultado(req.jugador,rival)
+  if(rival.ataques?.length===5&&req.jugador.ataques?.length===5) await registrarResultado(req.jugador,rival)
   res.set("Cache-Control","no-store");res.json({ataques:rival.ataques||[]})
-})
+}catch(error){next(error)}})
 function gana(a,b){return(a==="FUEGO"&&b==="TIERRA")||(a==="AGUA"&&b==="FUEGO")||(a==="TIERRA"&&b==="AGUA")}
-function registrarResultado(jugador,rival){
+async function registrarResultado(jugador,rival){
   if(!jugador.dueloId||jugador.dueloRegistrado===jugador.dueloId||rival.dueloRegistrado===jugador.dueloId)return
   let rondasJugador=0,rondasRival=0;for(let i=0;i<5;i++){if(gana(jugador.ataques[i],rival.ataques[i]))rondasJugador++;else if(gana(rival.ataques[i],jugador.ataques[i]))rondasRival++}
   const resultadoJugador=rondasJugador===rondasRival?"empate":rondasJugador>rondasRival?"victoria":"derrota", resultadoRival=resultadoJugador==="empate"?"empate":resultadoJugador==="victoria"?"derrota":"victoria"
-  const cuentaJugador=cuentas.find((c)=>c.id===jugador.cuentaId),cuentaRival=cuentas.find((c)=>c.id===rival.cuentaId),fecha=Date.now()
-  if(!cuentaJugador||!cuentaRival)return
-  const agregar=(cuenta,oponente,guardian,resultado,aFavor,enContra)=>{cuenta.puntos=(cuenta.puntos||0)+(resultado==="victoria"?30:resultado==="empate"?10:5);cuenta.batallas=(cuenta.batallas??cuenta.historial?.length??0)+1;cuenta.victorias=(cuenta.victorias??cuenta.historial?.filter((b)=>b.resultado==="victoria").length??0)+(resultado==="victoria"?1:0);cuenta.derrotas=(cuenta.derrotas??cuenta.historial?.filter((b)=>b.resultado==="derrota").length??0)+(resultado==="derrota"?1:0);cuenta.empates=(cuenta.empates??cuenta.historial?.filter((b)=>b.resultado==="empate").length??0)+(resultado==="empate"?1:0);cuenta.historial=cuenta.historial||[];cuenta.historial.push({id:jugador.dueloId,fecha,oponente,guardian,resultado,rondasAFavor:aFavor,rondasEnContra:enContra});if(cuenta.historial.length>200)cuenta.historial.shift()}
-  agregar(cuentaJugador,rival.nombre,jugador.mokepon?.nombre||null,resultadoJugador,rondasJugador,rondasRival);agregar(cuentaRival,jugador.nombre,rival.mokepon?.nombre||null,resultadoRival,rondasRival,rondasJugador)
-  jugador.dueloRegistrado=jugador.dueloId;rival.dueloRegistrado=jugador.dueloId;guardarCuentas()
+  await db.recordBattle({id:jugador.dueloId,one:{accountId:jugador.cuentaId,guardian:jugador.mokepon?.nombre||null,result:resultadoJugador,rounds:rondasJugador},two:{accountId:rival.cuentaId,guardian:rival.mokepon?.nombre||null,result:resultadoRival,rounds:rondasRival}})
+  jugador.dueloRegistrado=jugador.dueloId;rival.dueloRegistrado=jugador.dueloId
 }
-app.post("/mokepon/:jugadorId/finalizar",limiteAcciones,autenticarJugador,autorizarJugadorPropio,(req,res)=>{
+app.post("/mokepon/:jugadorId/finalizar",limiteAcciones,autenticarJugador,autorizarJugadorPropio,async(req,res,next)=>{try{
   const rival=buscarJugador(req.jugador.oponenteId)
-  if(rival)registrarResultado(req.jugador,rival)
+  if(rival)await registrarResultado(req.jugador,rival)
   req.jugador.estadoJuego="arena";req.jugador.ataques=[]
   if(!rival||rival.oponenteId!==req.jugador.id){req.jugador.oponenteId=null;return res.status(204).end()}
   if(rival.estadoJuego==="arena"){rival.oponenteId=null;rival.ataques=[];req.jugador.oponenteId=null}
   res.status(204).end()
-})
+}catch(error){next(error)}})
 app.delete("/mokepon/:jugadorId",limiteAcciones,autenticarJugador,autorizarJugadorPropio,(req,res)=>{abandonarSala(req.jugador);const i=jugadores.findIndex((j)=>j.id===req.jugador.id);if(i>=0)jugadores.splice(i,1);res.status(204).end()})
 
 app.use((error,req,res,next)=>{if(error.type==="entity.too.large")return res.status(413).json({error:"Solicitud demasiado grande."});if(error instanceof SyntaxError&&error.status===400&&"body" in error)return res.status(400).json({error:"JSON inválido."});console.error(error);res.status(500).json({error:"Error interno del servidor."})})
 setInterval(()=>{const limite=Date.now()-DURACION_SESION_MS;for(let i=jugadores.length-1;i>=0;i--){if(jugadores[i].ultimaActividad<limite){abandonarSala(jugadores[i]);jugadores.splice(i,1)}}},60000).unref()
-app.listen(PORT,"0.0.0.0",()=>console.log(`Servidor funcionando en puerto ${PORT}`))
+async function iniciarServidor(){
+  await db.initialize()
+  const server=app.listen(PORT,"0.0.0.0",()=>console.log(`Servidor funcionando en puerto ${PORT}`))
+  const cerrar=()=>server.close(()=>db.close().finally(()=>process.exit(0)))
+  process.once("SIGTERM",cerrar);process.once("SIGINT",cerrar)
+}
+iniciarServidor().catch((error)=>{console.error("No se pudo iniciar la base de datos:",error);process.exit(1)})

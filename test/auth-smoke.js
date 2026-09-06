@@ -1,15 +1,16 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
 const { spawn } = require("node:child_process")
-const { mkdtemp, readFile } = require("node:fs/promises")
-const { tmpdir } = require("node:os")
 const path = require("node:path")
+const { Pool } = require("pg")
 
 test("registra, activa e inicia sesión y genera auditoría", async (t) => {
-  const dir = await mkdtemp(path.join(tmpdir(), "mokepon-auth-"))
   const port = 18080 + Math.floor(Math.random() * 1000)
+  const username = `prueba_${Date.now()}`
+  const email = `${username}@example.com`
+  const pool = new Pool({connectionString:process.env.DATABASE_URL})
   const server = spawn(process.execPath, [path.join(__dirname, "..", "index.js")], {
-    env:{ ...process.env, PORT:String(port), NODE_ENV:"development", DATA_FILE:path.join(dir,"accounts.json"), AUDIT_FILE:path.join(dir,"audit.jsonl"), RECAPTCHA_SITE_KEY:"", RECAPTCHA_SECRET_KEY:"", SMTP_HOST:"", SMTP_USER:"", SMTP_PASSWORD:"", EMAIL_FROM:"" },
+    env:{ ...process.env, PORT:String(port), NODE_ENV:"development", RECAPTCHA_SITE_KEY:"", RECAPTCHA_SECRET_KEY:"", SMTP_HOST:"", SMTP_USER:"", SMTP_PASSWORD:"", EMAIL_FROM:"" },
     stdio:["ignore","pipe","pipe"]
   })
   t.after(() => server.kill("SIGTERM"))
@@ -18,21 +19,52 @@ test("registra, activa e inicia sesión y genera auditoría", async (t) => {
   server.stderr.on("data",(chunk)=>{output+=chunk})
   await new Promise((resolve,reject)=>{const limite=setTimeout(()=>reject(new Error(output||"El servidor no inició")),5000);server.stdout.on("data",()=>{if(output.includes("Servidor funcionando")){clearTimeout(limite);resolve()}})})
   const request = (ruta,body) => fetch(`http://127.0.0.1:${port}${ruta}`,{method:"POST",headers:{"Content-Type":"application/json","User-Agent":"Mokepon-Test"},body:JSON.stringify(body)})
-  const registro=await request("/auth/registro",{usuario:"prueba_segura",nombre:"Prueba",correo:"prueba@example.com",clave:"clave-segura-123",captchaToken:"desarrollo-local"})
+  const registro=await request("/auth/registro",{usuario:username,nombre:"Prueba",correo:email,clave:"clave-segura-123",captchaToken:"desarrollo-local"})
   assert.equal(registro.status,201)
   const datosRegistro=await registro.json()
   await new Promise((resolve)=>setTimeout(resolve,50))
-  const codigo=output.match(/Código de activación para prueba_segura: (\d{6})/)?.[1]
+  const codigo=output.match(new RegExp(`Código de activación para ${username}: (\\d{6})`))?.[1]
   assert.match(codigo,/^\d{6}$/)
-  const activacion=await request("/auth/activar",{usuario:"prueba_segura",codigo})
+  const activacion=await request("/auth/activar",{usuario:username,codigo})
   assert.equal(activacion.status,200)
   assert.ok((await activacion.json()).token)
-  const login=await request("/auth/login",{usuario:"prueba_segura",clave:"clave-segura-123",captchaToken:"desarrollo-local"})
+  const login=await request("/auth/login",{usuario:username,clave:"clave-segura-123",captchaToken:"desarrollo-local"})
   assert.equal(login.status,200)
-  const auditoria=await readFile(path.join(dir,"audit.jsonl"),"utf8")
-  assert.match(auditoria,/"evento":"registro_pendiente"/)
-  assert.match(auditoria,/"evento":"cuenta_activada"/)
-  assert.match(auditoria,/"evento":"login_exitoso"/)
-  assert.doesNotMatch(auditoria,/clave-segura-123|"codigo"|"token"/)
+  const datosLogin=await login.json()
+  const eventos=(await pool.query("SELECT event FROM audit_events WHERE username=$1 ORDER BY occurred_at",[username])).rows.map((row)=>row.event)
+  assert.deepEqual(eventos,["registro_pendiente","cuenta_activada","login_exitoso"])
+  const account=(await pool.query("SELECT active,points,battles_count FROM accounts WHERE username=$1",[username])).rows[0]
+  assert.deepEqual(account,{active:true,points:0,battles_count:0})
+  await pool.query("UPDATE accounts SET role='admin' WHERE username=$1",[username])
+  const adminSummary=await fetch(`http://127.0.0.1:${port}/admin/api/resumen`,{headers:{Authorization:`Bearer ${datosLogin.token}`}})
+  assert.equal(adminSummary.status,200)
+  assert.ok((await adminSummary.json()).users>=1)
+  const userId=(await pool.query("SELECT id FROM accounts WHERE username=$1",[username])).rows[0].id
+  const note=await fetch(`http://127.0.0.1:${port}/admin/api/usuarios/${userId}/notas`,{method:"POST",headers:{Authorization:`Bearer ${datosLogin.token}`,"Content-Type":"application/json"},body:JSON.stringify({nota:"Caso de soporte de prueba"})})
+  assert.equal(note.status,201)
+  assert.equal((await pool.query("SELECT count(*)::int count FROM support_notes WHERE account_id=$1",[userId])).rows[0].count,1)
+  const resetRequest=await fetch(`http://127.0.0.1:${port}/admin/api/usuarios/${userId}/restablecer-clave`,{method:"POST",headers:{Authorization:`Bearer ${datosLogin.token}`}})
+  assert.equal(resetRequest.status,202)
+  await new Promise((resolve)=>setTimeout(resolve,30))
+  const resetUrl=output.match(new RegExp(`Enlace de restablecimiento para ${username}: (http[^\\s]+)`))?.[1]
+  assert.ok(resetUrl)
+  const resetToken=new URL(resetUrl).searchParams.get("token")
+  const complete=await request("/auth/restablecer/completar",{token:resetToken,clave:"clave-nueva-segura-456"})
+  assert.equal(complete.status,200)
+  assert.equal((await request("/auth/login",{usuario:username,clave:"clave-segura-123",captchaToken:"desarrollo-local"})).status,401)
+  assert.equal((await request("/auth/login",{usuario:username,clave:"clave-nueva-segura-456",captchaToken:"desarrollo-local"})).status,200)
+  assert.equal((await pool.query("SELECT count(*)::int count FROM password_reset_tokens WHERE account_id=$1 AND used_at IS NOT NULL",[userId])).rows[0].count,1)
+  const selfService=await request("/auth/solicitar-restablecimiento",{correo:email,captchaToken:"desarrollo-local"})
+  assert.equal(selfService.status,202)
+  const unknownEmail=await request("/auth/solicitar-restablecimiento",{correo:"no-existe@example.com",captchaToken:"desarrollo-local"})
+  assert.equal(unknownEmail.status,202)
+  assert.equal((await selfService.json()).mensaje,(await unknownEmail.json()).mensaje)
+  await new Promise((resolve)=>setTimeout(resolve,30))
+  const resetLinks=[...output.matchAll(new RegExp(`Enlace de restablecimiento para ${username}: (http[^\\s]+)`,"g"))]
+  const selfToken=new URL(resetLinks.at(-1)[1]).searchParams.get("token")
+  assert.equal((await request("/auth/restablecer/completar",{token:selfToken,clave:"clave-final-segura-789"})).status,200)
+  assert.equal((await request("/auth/restablecer/completar",{token:selfToken,clave:"otra-clave-segura-789"})).status,400)
   assert.ok(datosRegistro.reenvioToken)
+  await pool.query("DELETE FROM accounts WHERE username=$1",[username])
+  await pool.end()
 })

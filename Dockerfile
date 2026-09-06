@@ -2,12 +2,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && corepack prepare pnpm@10.18.3 --activate && pnpm install --frozen-lockfile --prod
 
 COPY --chown=node:node . .
-
-RUN mkdir -p /app/data && chown node:node /app/data
 
 ENV PORT=8080
 ENV NODE_ENV=production

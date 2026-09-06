@@ -3,10 +3,12 @@ services:
     build: .
     container_name: mokepon
     ports:
-      - "8080:8080"
+      - "${MOKEPON_PORT:-8080}:8080"
     environment:
       PORT: 8080
       NODE_ENV: development
+      DATABASE_URL: postgres://mokepon:mokepon@database:5432/mokepon
+      ADMIN_USERNAMES: ${ADMIN_USERNAMES:-}
       RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
       RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -19,5 +21,26 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - ./data:/app/data
+    depends_on:
+      database:
+        condition: service_healthy
     restart: unless-stopped
+  database:
+    image: postgres:17-alpine
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: mokepon
+      POSTGRES_USER: mokepon
+      POSTGRES_PASSWORD: mokepon
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mokepon -d mokepon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

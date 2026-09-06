@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#071914"><title>Administración · Guardianes del Mayab</title>
+  <link rel="stylesheet" href="./admin.css?v=1">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar"><div><span class="mark">✦</span><div><small>Guardianes del Mayab</small><h1>Centro de administración</h1></div></div><div class="operator"><span id="operator"></span><button id="logout" class="ghost" hidden>Cerrar sesión</button></div></header>
+
+    <section id="login-view" class="login-card" hidden>
+      <p class="eyebrow">Acceso restringido</p><h2>Inicia sesión como administrador</h2><p>Usa tu cuenta administrativa. Todos los accesos y cambios quedan registrados.</p>
+      <form id="login-form"><label>Usuario<input id="username" autocomplete="username" required></label><label>Contraseña<input id="password" type="password" autocomplete="current-password" required></label><div id="captcha"></div><p id="captcha-message" class="muted"></p><button class="primary">Entrar al panel</button><p id="login-error" class="error"></p></form>
+    </section>
+
+    <section id="dashboard" hidden>
+      <nav class="tabs"><button class="active" data-view="users">Usuarios</button><button data-view="logs">Logs de actividad</button></nav>
+      <div id="summary" class="summary"></div>
+
+      <section id="users-view" class="workspace">
+        <div class="toolbar"><div><p class="eyebrow">Directorio</p><h2>Usuarios</h2></div><form id="user-search"><input id="user-query" type="search" placeholder="Usuario, nombre o correo"><button class="ghost">Buscar</button></form></div>
+        <div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Estado</th><th>Progreso</th><th>Registro</th><th></th></tr></thead><tbody id="users-body"></tbody></table></div>
+        <div id="users-pagination" class="pagination"></div>
+      </section>
+
+      <section id="logs-view" class="workspace" hidden>
+        <div class="toolbar"><div><p class="eyebrow">Auditoría</p><h2>Actividad del sistema</h2></div><form id="log-search"><input id="log-query" type="search" placeholder="Usuario o IP"><input id="event-query" placeholder="Tipo de evento"><button class="ghost">Filtrar</button></form></div>
+        <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>IP / ubicación</th><th>Resultado</th></tr></thead><tbody id="logs-body"></tbody></table></div>
+        <div id="logs-pagination" class="pagination"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="user-dialog"><div class="dialog-head"><div><p class="eyebrow">Ficha de soporte</p><h2 id="detail-name"></h2></div><button id="close-dialog" class="icon-button" aria-label="Cerrar">×</button></div><div id="detail-content"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="./admin.js?v=2"></script>
+</body>
+</html>

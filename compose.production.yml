@@ -11,6 +11,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8080
+      DATABASE_URL: postgres://mokepon:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}@database:5432/mokepon
+      ADMIN_USERNAMES: ${ADMIN_USERNAMES:?ADMIN_USERNAMES es obligatorio}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?PUBLIC_ORIGIN es obligatorio}
       RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:?RECAPTCHA_SITE_KEY es obligatorio}
       RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:?RECAPTCHA_SECRET_KEY es obligatorio}
@@ -21,14 +23,16 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD es obligatorio}
       EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM es obligatorio}
       IPINFO_TOKEN: ${IPINFO_TOKEN:-}
-      DATA_FILE: /app/data/accounts.json
-      AUDIT_FILE: /app/data/audit.jsonl
+    depends_on:
+      database:
+        condition: service_healthy
     expose:
       - "8080"
-    volumes:
-      - mokepon_data:/app/data
     networks:
       - proxy_net
+      - database_net
+    volumes:
+      - mokepon_legacy:/app/data:ro
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -36,12 +40,36 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+  database:
+    image: postgres:17-alpine
+    container_name: mokepon_database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mokepon
+      POSTGRES_USER: mokepon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - mokepon_postgres:/var/lib/postgresql/data
+    networks:
+      - database_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mokepon -d mokepon"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
-  mokepon_data:
+  mokepon_postgres:
+    name: mokepon_postgres
+  mokepon_legacy:
+    external: true
     name: mokepon_data
 
 networks:
   proxy_net:
     external: true
     name: proxy_net
+  database_net:
+    internal: true
