@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#071914"><meta name="description" content="Guardianes del Mayab, aventura multijugador inspirada en Guatemala."><title>Guardianes del Mayab</title><link rel="stylesheet" href="./styles.css?v=20260830-5"></head>
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#071914"><meta name="description" content="Guardianes del Mayab, aventura multijugador inspirada en Guatemala."><title>Guardianes del Mayab</title><link rel="stylesheet" href="./styles.css?v=20260906-2"></head>
 <body><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div><main class="game-shell">
 <header class="brand"><span class="brand-mark">✦</span><div><p class="eyebrow">Crónicas de Guatemala</p><p class="brand-name">Guardianes del Mayab</p></div><span id="jugador-badge" class="player-badge" hidden></span><button id="boton-cerrar-sesion" class="ghost-button" type="button" hidden>Cerrar sesión</button></header>
 
@@ -15,8 +15,16 @@
 <section id="seleccionar-sala" class="game-panel lobby-panel" hidden>
   <div class="intro"><span class="chapter">Lobby · Cuatro territorios</span><h1 class="titulo">Elige una arena</h1><p class="subtitulo">Crea una sala o solicita acceso a una partida activa. El anfitrión decidirá quién entra.</p></div>
   <section class="profile-card"><div><span class="chapter">Progreso del guardián</span><strong id="perfil-nivel">Nivel 1</strong></div><div class="profile-stats"><span><b id="perfil-puntos">0</b> puntos</span><span><b id="perfil-batallas">0</b> batallas</span><span><b id="perfil-victorias">0</b> victorias</span></div><div id="perfil-historial" class="battle-log"></div></section>
-  <div id="contenedor-salas" class="room-grid"></div><p id="estado-lobby" class="lobby-status" aria-live="polite"></p>
+  <div id="contenedor-salas" class="room-grid"></div><p id="estado-lobby" class="lobby-status" aria-live="polite"></p><button id="volver-modos-lobby" class="ghost-button" type="button">← Volver a modos</button>
 </section>
+
+<section id="seleccionar-modo" class="game-panel lobby-panel" hidden>
+  <div class="intro"><span class="chapter">Elige tu camino</span><h1 class="titulo">¿Cómo quieres jugar?</h1><p class="subtitulo">Combate con otros guardianes, entrena contra la máquina o avanza en tu propia crónica.</p></div>
+  <section class="profile-card"><div><span class="chapter">Tus recursos</span><strong id="modo-nivel">Nivel 1</strong></div><div class="profile-stats currency-list"><span><img src="./assets/currency-jade.png" alt="Jade"><b id="cartera-jade">0</b> jades</span><span><img src="./assets/currency-obsidian.png" alt="Obsidiana"><b id="cartera-obsidiana">0</b> obsidiana</span><span><img src="./assets/currency-gold.png" alt="Oro"><b id="cartera-oro">0</b> oro</span></div></section>
+  <div class="mode-grid"><button class="mode-card" data-mode="pvp"><span class="mode-icon">⚔️</span><strong>Duelo en línea</strong><small>Entra a una arena con otros jugadores.</small></button><button class="mode-card" data-mode="maquina"><span class="mode-icon">🗿</span><strong>Contra la máquina</strong><small>Entrena sin esperar a otro jugador.</small></button><button class="mode-card" data-mode="misiones"><span class="mode-icon">🧭</span><strong>Misiones</strong><small>Supera desafíos y consigue recompensas.</small></button></div>
+</section>
+
+<section id="seleccionar-mision" class="game-panel lobby-panel" hidden><div class="intro"><span class="chapter">Crónicas individuales</span><h1 class="titulo">Misiones del Mayab</h1><p class="subtitulo">Completa cada misión para abrir el siguiente sendero. Las recompensas únicas se entregan al vencer por primera vez.</p></div><div id="contenedor-misiones" class="mission-grid"></div><button id="volver-modos-misiones" class="ghost-button" type="button">← Volver a modos</button></section>
 
 <aside id="room-dock" class="room-dock" hidden>
   <div><span class="chapter">Sala actual</span><strong id="nombre-sala-actual"></strong><span id="rol-sala" class="role-chip"></span></div>
@@ -25,21 +33,23 @@
 </aside>
 
 <section id="seleccionar-mascota" class="game-panel hero-panel" hidden>
-  <div class="intro"><span class="chapter">Capítulo I · El llamado</span><h1 class="titulo">Elige a tu guardián</h1><p class="subtitulo">Forma un vínculo y entra a la arena con los jugadores de tu sala.</p></div>
+  <div class="intro"><span class="chapter">Capítulo I · El llamado</span><h1 class="titulo">Elige a tu guardián</h1><p id="subtitulo-guardian" class="subtitulo">Forma un vínculo y entra a la arena con los jugadores de tu sala.</p></div>
   <div id="contenedorTarjetas" class="tarjetas" role="radiogroup" aria-label="Guardianes disponibles"></div>
+  <section id="selector-skins" class="skin-selector" hidden><span class="chapter">Apariencia</span><h2>Elige un skin</h2><div id="contenedor-skins" class="skin-grid" role="radiogroup" aria-label="Skins disponibles"></div></section>
   <button id="boton-mascota" class="primary-button" type="button"><span>Entrar a la arena</span><span>→</span></button>
+  <button id="volver-modos-guardian" class="ghost-button" type="button">← Cambiar modo</button>
 </section>
 
 <section id="ver-mapa" class="game-panel map-panel" hidden>
   <div class="section-heading"><div><span class="chapter">Capítulo II · Territorio compartido</span><h1 id="titulo-arena" class="titulo">Encuentra a tu rival</h1></div><p class="map-hint">Acércate a otro guardián para iniciar un duelo.</p></div>
   <div class="arena-layout"><div><div class="canvas-frame"><canvas id="mapa"></canvas></div><div class="map-controls"><button id="boton-arriba" aria-label="Arriba">↑</button><button id="boton-izquierda" aria-label="Izquierda">←</button><button id="boton-abajo" aria-label="Abajo">↓</button><button id="boton-derecha" aria-label="Derecha">→</button></div></div>
-  <aside class="chat-panel"><div class="chat-heading"><span class="status-dot"></span><div><strong>Chat de la sala</strong><small>Solo participantes aceptados</small></div></div><div id="mensajes-chat" class="chat-messages" aria-live="polite"></div><form id="form-chat" class="chat-form"><input id="mensaje-chat" maxlength="180" autocomplete="off" placeholder="Escribe un mensaje…" aria-label="Mensaje"><button type="submit" aria-label="Enviar mensaje">↑</button></form></aside></div>
+  <aside id="panel-chat" class="chat-panel"><div class="chat-heading"><span class="status-dot"></span><div><strong>Chat de la sala</strong><small>Solo participantes aceptados</small></div></div><div id="mensajes-chat" class="chat-messages" aria-live="polite"></div><form id="form-chat" class="chat-form"><input id="mensaje-chat" maxlength="180" autocomplete="off" placeholder="Escribe un mensaje…" aria-label="Mensaje"><button type="submit" aria-label="Enviar mensaje">↑</button></form></aside></div>
 </section>
 
 <section id="seleccionar-ataque" class="game-panel battle-panel" hidden>
-  <div class="intro compact"><span class="chapter">Capítulo III · Duelo de sala</span><h1 class="titulo">Invoca tus fuerzas</h1><p class="subtitulo">Elige cinco ataques. Cada elemento domina a otro.</p></div>
+  <div class="intro compact"><span id="capitulo-batalla" class="chapter">Capítulo III · Duelo de sala</span><h1 class="titulo">Invoca tus fuerzas</h1><p class="subtitulo">Elige cinco ataques. Cada elemento domina a otro.</p></div>
   <div class="element-guide"><span>🔥 Fuego vence Tierra</span><span>💧 Agua vence Fuego</span><span>🌿 Tierra vence Agua</span></div><div id="contenedorAtaques" class="tarjetas-ataques"></div>
-  <div id="mensajes" class="message-card" aria-live="polite"><span class="message-kicker">El oráculo dice</span><p id="resultado">Elige tu secuencia</p><section id="reiniciar" hidden><button id="boton-reiniciar" class="secondary-button" type="button">Volver a la arena</button></section></div>
-  <div class="ataques"><div class="ataques-jugador score-card"><span class="score-label">Tú · <b id="nombre-combate-jugador"></b></span><p id="mascota-jugador" class="guardian-name"></p><p id="vidas-jugador" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-jugador" class="attack-history"></div></div><div class="versus">VS</div><div class="ataques-enemigo score-card"><span class="score-label">Rival · <b id="nombre-combate-enemigo"></b></span><p id="mascota-enemigo" class="guardian-name"></p><p id="vidas-enemigo" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-enemigo" class="attack-history"></div></div></div>
+  <div id="mensajes" class="message-card" aria-live="polite"><span class="message-kicker">El oráculo dice</span><p id="resultado">Elige tu secuencia</p><section id="reiniciar" hidden><button id="boton-reiniciar" class="secondary-button" type="button">Volver a la arena</button></section><button id="boton-abandonar-batalla" class="ghost-button battle-exit" type="button" hidden>Salir de la batalla</button></div>
+  <div class="ataques"><div class="ataques-jugador score-card"><span class="score-label">Tú · <b id="nombre-combate-jugador"></b></span><img id="imagen-combate-jugador" class="battle-guardian" alt=""><p id="mascota-jugador" class="guardian-name"></p><p id="vidas-jugador" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-jugador" class="attack-history"></div></div><div class="versus">VS</div><div class="ataques-enemigo score-card"><span class="score-label">Rival · <b id="nombre-combate-enemigo"></b></span><img id="imagen-combate-enemigo" class="battle-guardian" alt=""><p id="mascota-enemigo" class="guardian-name"></p><p id="vidas-enemigo" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-enemigo" class="attack-history"></div></div></div>
 </section>
-</main><script src="./js/mokepon.js?v=20260905-3"></script></body></html>
+</main><script src="./js/mokepon.js?v=20260906-2"></script></body></html>

@@ -16,6 +16,11 @@ if (origenPublico && origenPublico.protocol !== "https:") {
 const DURACION_SESION_MS = 15 * 60 * 1000
 const MOKEPONES_VALIDOS = new Set(["B'alam", "Iq'", "Kabrak"])
 const ATAQUES_VALIDOS = new Set(["FUEGO", "AGUA", "TIERRA"])
+const MISIONES = [
+  {id:"eco-selva",name:"El eco de la selva",description:"Derrota al centinela que custodia el sendero.",enemy:"Kabrak",requires:null,reward:{jade:25,obsidian:0,gold:80},unlock:{type:"ataque",id:"garra-jade"}},
+  {id:"fuego-ancestral",name:"Fuego ancestral",description:"Enfrenta al guardián del cráter.",enemy:"B'alam",requires:"eco-selva",reward:{jade:40,obsidian:12,gold:120},unlock:{type:"skin",id:"balam-nocturno"}},
+  {id:"voz-lago",name:"La voz del lago",description:"Restaura el equilibrio de las aguas sagradas.",enemy:"Iq'",requires:"fuego-ancestral",reward:{jade:60,obsidian:20,gold:180},unlock:{type:"arena",id:"santuario-lago"}}
+]
 const MAX_JUGADORES_SALA = 8
 const jugadores = []
 const DURACION_LOGIN_MS = 30 * 24 * 60 * 60 * 1000
@@ -183,6 +188,27 @@ app.post("/auth/login",limiteUnirse,async(req,res,next)=>{
 app.post("/auth/activar",limiteActivacion,async(req,res,next)=>{try{const usuario=normalizarUsuario(req.body?.usuario),cuenta=await db.findAccountByUsername(usuario),codigo=String(req.body?.codigo||"");if(!cuenta||cuenta.activa===true)return res.status(400).json({error:"Solicitud de activación inválida."});if(!cuenta.activacion||cuenta.activacion.expira<Date.now()||cuenta.activacion.intentos>=5)return res.status(400).json({error:"El código expiró. Solicita uno nuevo."});await db.incrementActivationAttempts(cuenta.id);if(!/^\d{6}$/.test(codigo)||hashToken(codigo)!==cuenta.activacion.codigoHash){await auditar(req,"activacion_fallida",{cuentaId:cuenta.id,usuario,exito:false});return res.status(400).json({error:"Código incorrecto."})}await db.activateAccount(cuenta.id);const token=await crearLogin(cuenta);await auditar(req,"cuenta_activada",{cuentaId:cuenta.id,usuario});res.json({token,usuario,nombre:cuenta.nombre,estadisticas:await estadisticas(cuenta)})}catch(error){next(error)}})
 app.post("/auth/reenviar-codigo",limiteActivacion,async(req,res,next)=>{try{const cuenta=await db.findAccountByUsername(normalizarUsuario(req.body?.usuario)),reenvioToken=String(req.body?.reenvioToken||"");if(!cuenta||cuenta.activa===true||!cuenta.activacion?.reenvioHash||hashToken(reenvioToken)!==cuenta.activacion.reenvioHash)return res.status(202).json({mensaje:"Si la solicitud es válida, enviaremos un código."});const activacion=generarCodigo();await db.replaceActivation(cuenta.id,activacion);await enviarCodigo(cuenta,activacion.codigo);await auditar(req,"codigo_reenviado",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.status(202).json({mensaje:"Código enviado.",reenvioToken:activacion.reenvioToken})}catch(error){next(error)}})
 app.get("/auth/perfil",autenticarCuenta,async(req,res,next)=>{try{res.set("Cache-Control","no-store");res.json({usuario:req.cuenta.usuario,nombre:req.cuenta.nombre,estadisticas:await estadisticas(req.cuenta)})}catch(error){next(error)}})
+app.get("/aventura/progreso",autenticarCuenta,async(req,res,next)=>{try{
+  const progress=await db.getAdventureProgress(req.cuenta.id),completed=new Set(progress.completedMissions)
+  res.set("Cache-Control","no-store");res.json({...progress,missions:MISIONES.map((mission)=>({...mission,unlocked:!mission.requires||completed.has(mission.requires),completed:completed.has(mission.id)}))})
+}catch(error){next(error)}})
+app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const mode=req.body?.mode,guardian=req.body?.guardian,attacks=req.body?.attacks
+  if(!["maquina","mision"].includes(mode)||!MOKEPONES_VALIDOS.has(guardian)||!Array.isArray(attacks)||attacks.length!==5||attacks.some((a)=>!ATAQUES_VALIDOS.has(a)))return res.status(400).json({error:"Combate inválido."})
+  let mission=null
+  if(mode==="mision"){
+    mission=MISIONES.find((item)=>item.id===req.body?.missionId)
+    if(!mission)return res.status(404).json({error:"La misión no existe."})
+    const progress=await db.getAdventureProgress(req.cuenta.id)
+    if(mission.requires&&!progress.completedMissions.includes(mission.requires))return res.status(403).json({error:"Completa la misión anterior para desbloquear esta aventura."})
+  }
+  const options=["FUEGO","AGUA","TIERRA"],enemyAttacks=Array.from({length:5},()=>options[randomInt(0,options.length)])
+  let playerRounds=0,enemyRounds=0;for(let i=0;i<5;i++){if(gana(attacks[i],enemyAttacks[i]))playerRounds++;else if(gana(enemyAttacks[i],attacks[i]))enemyRounds++}
+  const result=playerRounds===enemyRounds?"empate":playerRounds>enemyRounds?"victoria":"derrota"
+  let missionResult=null;if(mission&&result==="victoria")missionResult=await db.completeMission(req.cuenta.id,mission)
+  const requestedEnemy=MOKEPONES_VALIDOS.has(req.body?.enemy)&&req.body.enemy!==guardian?req.body.enemy:null
+  res.json({enemy:mission?.enemy||requestedEnemy||["B'alam","Iq'","Kabrak"].filter((name)=>name!==guardian)[randomInt(0,2)],enemyAttacks,playerRounds,enemyRounds,result,missionResult})
+}catch(error){next(error)}})
 app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
 app.post("/auth/solicitar-restablecimiento",limiteActivacion,async(req,res,next)=>{try{
   if(!await verificarCaptcha(req.body?.captchaToken,req))return res.status(400).json({error:"Completa la verificación reCAPTCHA."})
@@ -265,7 +291,7 @@ app.get("/salas/:salaId/estado",autenticarJugador,(req,res)=>{
   const solicitudes=sala.creadorId===req.jugador.id?sala.solicitudes.map(buscarJugador).filter(Boolean).map(({id,nombre})=>({id,nombre})):[]
   const miembros=sala.miembros.map(buscarJugador).filter(Boolean).map(({id,nombre,mokepon,estadoJuego})=>({id,nombre,guardian:mokepon?.nombre||null,estadoJuego}))
   const rival=buscarJugador(req.jugador.oponenteId)
-  const duelo=req.jugador.estadoJuego==="batalla"&&rival?{enemigoId:rival.id,nombreJugador:rival.nombre,guardian:rival.mokepon?.nombre||null}:null
+  const duelo=req.jugador.estadoJuego==="batalla"&&rival?{enemigoId:rival.id,nombreJugador:rival.nombre,guardian:rival.mokepon?.nombre||null,skin:rival.mokepon?.skin||"clasico"}:null
   res.set("Cache-Control","no-store");res.json({...resumenSala(sala,req.jugador),estadoJuego:req.jugador.estadoJuego,duelo,solicitudes,miembros,mensajes:esMiembro(sala,req.jugador.id)?sala.mensajes.slice(-50):[]})
 })
 app.delete("/salas/:salaId/salir",limiteAcciones,autenticarJugador,(req,res)=>{const sala=buscarSala(req.params.salaId);if(sala)sala.solicitudes=sala.solicitudes.filter((id)=>id!==req.jugador.id);abandonarSala(req.jugador);res.status(204).end()})
@@ -275,11 +301,13 @@ app.post("/salas/:salaId/chat",limiteChat,autenticarJugador,(req,res)=>{
   const mensaje={id:randomUUID(),jugadorId:req.jugador.id,nombre:req.jugador.nombre,texto:req.body.texto.trim(),fecha:Date.now()};sala.mensajes.push(mensaje);if(sala.mensajes.length>100)sala.mensajes.shift();res.status(201).json(mensaje)
 })
 
-app.post("/mokepon/:jugadorId",limiteAcciones,autenticarJugador,autorizarJugadorPropio,(req,res)=>{
+app.post("/mokepon/:jugadorId",limiteAcciones,autenticarJugador,autorizarJugadorPropio,async(req,res,next)=>{try{
   if(!req.jugador.salaId) return res.status(409).json({error:"Debes entrar a una sala."})
   if(!MOKEPONES_VALIDOS.has(req.body.mokepon)) return res.status(400).json({error:"Guardián inválido."})
-  req.jugador.mokepon={nombre:req.body.mokepon};req.jugador.ataques=[];req.jugador.estadoJuego="arena";res.status(204).end()
-})
+  const skin=req.body?.skin||"clasico",progress=await db.getAdventureProgress(req.jugador.cuentaId),skinValido=skin==="clasico"||(req.body.mokepon==="B'alam"&&skin==="balam-nocturno"&&progress.unlocks.some((u)=>u.type==="skin"&&u.id===skin))
+  if(!skinValido)return res.status(403).json({error:"Ese skin todavía no está desbloqueado."})
+  req.jugador.mokepon={nombre:req.body.mokepon,skin};req.jugador.ataques=[];req.jugador.estadoJuego="arena";res.status(204).end()
+}catch(error){next(error)}})
 app.post("/mokepon/:jugadorId/posicion",limitePosicion,autenticarJugador,autorizarJugadorPropio,(req,res)=>{
   if(!coordenadaValida(req.body.x)||!coordenadaValida(req.body.y)) return res.status(400).json({error:"Posición inválida."})
   const sala=buscarSala(req.jugador.salaId);if(!esMiembro(sala,req.jugador.id))return res.status(403).json({error:"No perteneces a una sala."})

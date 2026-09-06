@@ -124,6 +124,29 @@ async function recordBattle(battle) {
   } catch(error){await client.query("ROLLBACK");throw error}finally{client.release()}
 }
 
+async function getAdventureProgress(accountId) {
+  const [wallet,missions,unlocks]=await Promise.all([
+    pool.query("SELECT jade,obsidian,gold FROM player_wallets WHERE account_id=$1",[accountId]),
+    pool.query("SELECT mission_id FROM mission_progress WHERE account_id=$1 ORDER BY completed_at",[accountId]),
+    pool.query("SELECT unlock_type,unlock_id FROM player_unlocks WHERE account_id=$1 ORDER BY unlocked_at",[accountId])
+  ])
+  return {wallet:wallet.rows[0]||{jade:0,obsidian:0,gold:0},completedMissions:missions.rows.map((row)=>row.mission_id),unlocks:unlocks.rows.map((row)=>({type:row.unlock_type,id:row.unlock_id}))}
+}
+
+async function completeMission(accountId,mission) {
+  const client=await pool.connect()
+  try{
+    await client.query("BEGIN")
+    const completed=await client.query("INSERT INTO mission_progress (account_id,mission_id) VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING mission_id",[accountId,mission.id])
+    if(!completed.rowCount){await client.query("ROLLBACK");return {firstCompletion:false,progress:await getAdventureProgress(accountId)}}
+    await client.query(`INSERT INTO player_wallets (account_id,jade,obsidian,gold) VALUES ($1,$2,$3,$4)
+      ON CONFLICT (account_id) DO UPDATE SET jade=player_wallets.jade+EXCLUDED.jade,obsidian=player_wallets.obsidian+EXCLUDED.obsidian,gold=player_wallets.gold+EXCLUDED.gold,updated_at=now()`,[accountId,mission.reward.jade||0,mission.reward.obsidian||0,mission.reward.gold||0])
+    if(mission.unlock)await client.query("INSERT INTO player_unlocks (account_id,unlock_type,unlock_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",[accountId,mission.unlock.type,mission.unlock.id])
+    await client.query("COMMIT")
+    return {firstCompletion:true,progress:await getAdventureProgress(accountId)}
+  }catch(error){await client.query("ROLLBACK");throw error}finally{client.release()}
+}
+
 const insertAudit = (entry) => pool.query(`INSERT INTO audit_events (occurred_at,event,account_id,actor_id,username,ip,location,user_agent,success)
   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[entry.fecha,entry.evento,entry.cuentaId,entry.actorId,entry.usuario,entry.ip,entry.ubicacion,entry.agente,entry.exito])
 
@@ -201,7 +224,7 @@ async function consumePasswordReset(tokenHash,passwordSalt,passwordHash) {
 
 module.exports={initialize,close:()=>pool.end(),findAccountByUsername,findAccountByEmail,findAccountById,findAccountBySession,
   createPendingAccount,deleteAccount,replaceActivation,updateResendHash,incrementActivationAttempts,activateAccount,
-  createSession,deleteSession,getStatistics,recordBattle,insertAudit,getAdminSummary,listAdminUsers,
+  createSession,deleteSession,getStatistics,recordBattle,getAdventureProgress,completeMission,insertAudit,getAdminSummary,listAdminUsers,
   getAdminUser,listAuditEvents,setAccountActive,revokeAccountSessions,addSupportNote}
 module.exports.createPasswordReset=createPasswordReset
 module.exports.findPasswordReset=findPasswordReset
