@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 data/
+backups/
 .env
 .env.production
 .DS_Store
