@@ -14,7 +14,11 @@ if (origenPublico && origenPublico.protocol !== "https:") {
   throw new Error("PUBLIC_ORIGIN debe utilizar HTTPS en producción.")
 }
 const DURACION_SESION_MS = 15 * 60 * 1000
-const MOKEPONES_VALIDOS = new Set(["B'alam", "Iq'", "Kabrak"])
+const MOKEPONES_VALIDOS = new Set(["B'alam", "Iq'", "Kabrak", "Cadejo", "Tz'ikin", "Sipak", "B'atz", "Tacuatzin"])
+const REQUISITOS_PREMIUM = new Map([
+  ["B'atz", { victorias:10, puntos:500 }],
+  ["Tacuatzin", { victorias:25, puntos:1200 }]
+])
 const ATAQUES_VALIDOS = new Set(["FUEGO", "AGUA", "TIERRA"])
 const MISIONES = [
   {id:"eco-selva",name:"El eco de la selva",description:"Derrota al centinela que custodia el sendero.",enemy:"Kabrak",requires:null,reward:{jade:25,obsidian:0,gold:80},unlock:{type:"ataque",id:"garra-jade"}},
@@ -73,6 +77,11 @@ async function enviarRestablecimiento(cuenta,enlace) {
   await transporteCorreo.sendMail({from:process.env.EMAIL_FROM,to:cuenta.correo,subject:"Restablece tu contraseña de Guardianes del Mayab",text:`Hola ${cuenta.nombre},\n\nSoporte inició un restablecimiento de contraseña para tu cuenta. Abre este enlace para crear una nueva contraseña:\n${enlace}\n\nEl enlace expira en 30 minutos y solo puede utilizarse una vez. Si no solicitaste ayuda, comunícate con soporte.`})
 }
 const estadisticas = (cuenta) => db.getStatistics(cuenta.id)
+const guardianDesbloqueado = (nombre, stats) => {
+  const requisito=REQUISITOS_PREMIUM.get(nombre)
+  return !requisito||(stats.victorias>=requisito.victorias&&stats.puntos>=requisito.puntos)
+}
+const catalogoPremium = (stats) => [...REQUISITOS_PREMIUM].map(([nombre,requisito])=>({nombre,...requisito,desbloqueado:guardianDesbloqueado(nombre,stats)}))
 const salas = [
   { id:"selva", nombre:"Templos de la Selva", descripcion:"Pirámides entre ceibas y piedra antigua", mapa:"./assets/mokemap.png" },
   { id:"volcan", nombre:"Corazón del Volcán", descripcion:"Obsidiana, fuego y cumbres sagradas", mapa:"./assets/arena-volcan.png" },
@@ -189,12 +198,14 @@ app.post("/auth/activar",limiteActivacion,async(req,res,next)=>{try{const usuari
 app.post("/auth/reenviar-codigo",limiteActivacion,async(req,res,next)=>{try{const cuenta=await db.findAccountByUsername(normalizarUsuario(req.body?.usuario)),reenvioToken=String(req.body?.reenvioToken||"");if(!cuenta||cuenta.activa===true||!cuenta.activacion?.reenvioHash||hashToken(reenvioToken)!==cuenta.activacion.reenvioHash)return res.status(202).json({mensaje:"Si la solicitud es válida, enviaremos un código."});const activacion=generarCodigo();await db.replaceActivation(cuenta.id,activacion);await enviarCodigo(cuenta,activacion.codigo);await auditar(req,"codigo_reenviado",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.status(202).json({mensaje:"Código enviado.",reenvioToken:activacion.reenvioToken})}catch(error){next(error)}})
 app.get("/auth/perfil",autenticarCuenta,async(req,res,next)=>{try{res.set("Cache-Control","no-store");res.json({usuario:req.cuenta.usuario,nombre:req.cuenta.nombre,estadisticas:await estadisticas(req.cuenta)})}catch(error){next(error)}})
 app.get("/aventura/progreso",autenticarCuenta,async(req,res,next)=>{try{
-  const progress=await db.getAdventureProgress(req.cuenta.id),completed=new Set(progress.completedMissions)
-  res.set("Cache-Control","no-store");res.json({...progress,missions:MISIONES.map((mission)=>({...mission,unlocked:!mission.requires||completed.has(mission.requires),completed:completed.has(mission.id)}))})
+  const [progress,stats]=await Promise.all([db.getAdventureProgress(req.cuenta.id),estadisticas(req.cuenta)]),completed=new Set(progress.completedMissions)
+  res.set("Cache-Control","no-store");res.json({...progress,guardianesPremium:catalogoPremium(stats),missions:MISIONES.map((mission)=>({...mission,unlocked:!mission.requires||completed.has(mission.requires),completed:completed.has(mission.id)}))})
 }catch(error){next(error)}})
 app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
   const mode=req.body?.mode,guardian=req.body?.guardian,attacks=req.body?.attacks
   if(!["maquina","mision"].includes(mode)||!MOKEPONES_VALIDOS.has(guardian)||!Array.isArray(attacks)||attacks.length!==5||attacks.some((a)=>!ATAQUES_VALIDOS.has(a)))return res.status(400).json({error:"Combate inválido."})
+  const stats=await estadisticas(req.cuenta),requisitoPremium=REQUISITOS_PREMIUM.get(guardian)
+  if(!guardianDesbloqueado(guardian,stats))return res.status(403).json({error:`${guardian} todavía está bloqueado.`,requisito:requisitoPremium})
   let mission=null
   if(mode==="mision"){
     mission=MISIONES.find((item)=>item.id===req.body?.missionId)
@@ -207,7 +218,8 @@ app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)
   const result=playerRounds===enemyRounds?"empate":playerRounds>enemyRounds?"victoria":"derrota"
   let missionResult=null;if(mission&&result==="victoria")missionResult=await db.completeMission(req.cuenta.id,mission)
   const requestedEnemy=MOKEPONES_VALIDOS.has(req.body?.enemy)&&req.body.enemy!==guardian?req.body.enemy:null
-  res.json({enemy:mission?.enemy||requestedEnemy||["B'alam","Iq'","Kabrak"].filter((name)=>name!==guardian)[randomInt(0,2)],enemyAttacks,playerRounds,enemyRounds,result,missionResult})
+  const possibleEnemies=[...MOKEPONES_VALIDOS].filter((name)=>name!==guardian)
+  res.json({enemy:mission?.enemy||requestedEnemy||possibleEnemies[randomInt(0,possibleEnemies.length)],enemyAttacks,playerRounds,enemyRounds,result,missionResult})
 }catch(error){next(error)}})
 app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
 app.post("/auth/solicitar-restablecimiento",limiteActivacion,async(req,res,next)=>{try{
@@ -304,7 +316,9 @@ app.post("/salas/:salaId/chat",limiteChat,autenticarJugador,(req,res)=>{
 app.post("/mokepon/:jugadorId",limiteAcciones,autenticarJugador,autorizarJugadorPropio,async(req,res,next)=>{try{
   if(!req.jugador.salaId) return res.status(409).json({error:"Debes entrar a una sala."})
   if(!MOKEPONES_VALIDOS.has(req.body.mokepon)) return res.status(400).json({error:"Guardián inválido."})
-  const skin=req.body?.skin||"clasico",progress=await db.getAdventureProgress(req.jugador.cuentaId),skinValido=skin==="clasico"||(req.body.mokepon==="B'alam"&&skin==="balam-nocturno"&&progress.unlocks.some((u)=>u.type==="skin"&&u.id===skin))
+  const [progress,stats]=await Promise.all([db.getAdventureProgress(req.jugador.cuentaId),db.getStatistics(req.jugador.cuentaId)]),requisitoPremium=REQUISITOS_PREMIUM.get(req.body.mokepon)
+  if(!guardianDesbloqueado(req.body.mokepon,stats))return res.status(403).json({error:`${req.body.mokepon} todavía está bloqueado.`,requisito:requisitoPremium})
+  const skin=req.body?.skin||"clasico",skinValido=skin==="clasico"||(req.body.mokepon==="B'alam"&&skin==="balam-nocturno"&&progress.unlocks.some((u)=>u.type==="skin"&&u.id===skin))
   if(!skinValido)return res.status(403).json({error:"Ese skin todavía no está desbloqueado."})
   req.jugador.mokepon={nombre:req.body.mokepon,skin};req.jugador.ataques=[];req.jugador.estadoJuego="arena";res.status(204).end()
 }catch(error){next(error)}})
