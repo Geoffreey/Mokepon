@@ -25,6 +25,8 @@ const MISIONES = [
   {id:"fuego-ancestral",name:"Fuego ancestral",description:"Enfrenta al guardián del cráter.",enemy:"B'alam",requires:"eco-selva",reward:{jade:40,obsidian:12,gold:120},unlock:{type:"skin",id:"balam-nocturno"}},
   {id:"voz-lago",name:"La voz del lago",description:"Restaura el equilibrio de las aguas sagradas.",enemy:"Iq'",requires:"fuego-ancestral",reward:{jade:60,obsidian:20,gold:180},unlock:{type:"arena",id:"santuario-lago"}}
 ]
+const CASINO_LIMITS={jade:{min:1,max:100},obsidian:{min:1,max:50},gold:{min:10,max:1000}}
+const CASINO_MULTIPLIERS={bajo:190,siete:550,alto:190}
 const MAX_JUGADORES_SALA = 8
 const jugadores = []
 const DURACION_LOGIN_MS = 30 * 24 * 60 * 60 * 1000
@@ -222,6 +224,40 @@ app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)
   res.json({enemy:mission?.enemy||requestedEnemy||possibleEnemies[randomInt(0,possibleEnemies.length)],enemyAttacks,playerRounds,enemyRounds,result,missionResult})
 }catch(error){next(error)}})
 app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
+app.get("/casino",autenticarCuenta,async(req,res,next)=>{try{const [progress,history]=await Promise.all([db.getAdventureProgress(req.cuenta.id),db.getCasinoHistory(req.cuenta.id)]);res.set("Cache-Control","no-store");res.json({wallet:progress.wallet,history,limits:CASINO_LIMITS,multipliers:CASINO_MULTIPLIERS})}catch(error){next(error)}})
+app.post("/casino/dados-ajaw",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const currency=String(req.body?.currency||""),choice=String(req.body?.choice||""),bet=Number(req.body?.bet),clientRoundId=String(req.body?.clientRoundId||""),limits=CASINO_LIMITS[currency]
+  if(!limits||!CASINO_MULTIPLIERS[choice]||!Number.isSafeInteger(bet)||bet<limits.min||bet>limits.max||!/^[0-9a-f-]{36}$/i.test(clientRoundId))return res.status(400).json({error:"Apuesta inválida."})
+  const dieOne=randomInt(1,7),dieTwo=randomInt(1,7),sum=dieOne+dieTwo,won=(choice==="bajo"&&sum<=6)||(choice==="siete"&&sum===7)||(choice==="alto"&&sum>=8),payout=won?Math.floor(bet*CASINO_MULTIPLIERS[choice]/100):0
+  const result=await db.playCasinoRound({id:randomUUID(),accountId:req.cuenta.id,clientRoundId,game:"dados-ajaw",currency,bet,choice,dieOne,dieTwo,outcome:String(sum),payout})
+  if(!result)return res.status(409).json({error:"Saldo insuficiente para esta apuesta."})
+  res.set("Cache-Control","no-store");res.status(201).json({...result,sum:result.dieOne+result.dieTwo,won:result.payout>0})
+}catch(error){next(error)}})
+app.post("/casino/sol-luna",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const currency=String(req.body?.currency||""),choice=String(req.body?.choice||""),bet=Number(req.body?.bet),clientRoundId=String(req.body?.clientRoundId||""),limits=CASINO_LIMITS[currency]
+  if(!limits||!["sol","luna"].includes(choice)||!Number.isSafeInteger(bet)||bet<limits.min||bet>limits.max||!/^[0-9a-f-]{36}$/i.test(clientRoundId))return res.status(400).json({error:"Apuesta inválida."})
+  const outcome=randomInt(0,2)===0?"sol":"luna",won=choice===outcome,payout=won?Math.floor(bet*190/100):0
+  const result=await db.playCasinoRound({id:randomUUID(),accountId:req.cuenta.id,clientRoundId,game:"sol-luna",currency,bet,choice,outcome,payout})
+  if(!result)return res.status(409).json({error:"Saldo insuficiente para esta apuesta."})
+  res.set("Cache-Control","no-store");res.status(201).json({...result,won:result.payout>0})
+}catch(error){next(error)}})
+app.post("/casino/rueda-maya",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const currency=String(req.body?.currency||""),bet=Number(req.body?.bet),clientRoundId=String(req.body?.clientRoundId||""),limits=CASINO_LIMITS[currency]
+  if(!limits||!Number.isSafeInteger(bet)||bet<limits.min||bet>limits.max||!/^[0-9a-f-]{36}$/i.test(clientRoundId))return res.status(400).json({error:"Apuesta inválida."})
+  const symbols=["jaguar","quetzal","jade","templo","sol","cacao"],reels=Array.from({length:4},()=>symbols[randomInt(0,symbols.length)]),won=reels.every((symbol)=>symbol===reels[0]),payout=won?bet*200:0
+  const result=await db.playCasinoRound({id:randomUUID(),accountId:req.cuenta.id,clientRoundId,game:"rueda-maya",currency,bet,choice:"giro",outcome:JSON.stringify(reels),payout})
+  if(!result)return res.status(409).json({error:"Saldo insuficiente para esta apuesta."})
+  res.set("Cache-Control","no-store");res.status(201).json({...result,reels:JSON.parse(result.outcome),won:result.payout>0})
+}catch(error){next(error)}})
+app.post("/casino/cartas-mayab",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const currency=String(req.body?.currency||""),bet=Number(req.body?.bet),clientRoundId=String(req.body?.clientRoundId||""),limits=CASINO_LIMITS[currency]
+  if(!limits||!Number.isSafeInteger(bet)||bet<limits.min||bet>limits.max||!/^[0-9a-f-]{36}$/i.test(clientRoundId))return res.status(400).json({error:"Apuesta inválida."})
+  const lineages=["jaguar","quetzal","ceiba","templo"],deck=lineages.flatMap((lineage)=>Array.from({length:10},(_,i)=>({lineage,value:i+1}))),playerIndex=randomInt(0,deck.length),playerCard=deck[playerIndex],remaining=deck.filter((_,i)=>i!==playerIndex),houseCard=remaining[randomInt(0,remaining.length)]
+  const resultType=playerCard.value===houseCard.value?"empate":playerCard.value>houseCard.value?"victoria":"derrota",payout=resultType==="victoria"?Math.max(bet+1,Math.round(bet*190/100)):resultType==="empate"?bet:0,outcome=JSON.stringify({playerCard,houseCard,result:resultType})
+  const result=await db.playCasinoRound({id:randomUUID(),accountId:req.cuenta.id,clientRoundId,game:"cartas-mayab",currency,bet,choice:"duelo",outcome,payout})
+  if(!result)return res.status(409).json({error:"Saldo insuficiente para esta apuesta."})
+  res.set("Cache-Control","no-store");res.status(201).json({...result,...JSON.parse(result.outcome),won:JSON.parse(result.outcome).result==="victoria"})
+}catch(error){next(error)}})
 app.post("/auth/solicitar-restablecimiento",limiteActivacion,async(req,res,next)=>{try{
   if(!await verificarCaptcha(req.body?.captchaToken,req))return res.status(400).json({error:"Completa la verificación reCAPTCHA."})
   const correo=typeof req.body?.correo==="string"?req.body.correo.trim().toLowerCase():"",target=correoValido(correo)?await db.findAccountByEmail(correo):null

@@ -150,6 +150,24 @@ async function completeMission(accountId,mission) {
 const insertAudit = (entry) => pool.query(`INSERT INTO audit_events (occurred_at,event,account_id,actor_id,username,ip,location,user_agent,success)
   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[entry.fecha,entry.evento,entry.cuentaId,entry.actorId,entry.usuario,entry.ip,entry.ubicacion,entry.agente,entry.exito])
 
+async function playCasinoRound({id,accountId,clientRoundId,game,currency,bet,choice,dieOne=null,dieTwo=null,outcome,payout}) {
+  const client=await pool.connect()
+  try{
+    await client.query("BEGIN")
+    const previous=await client.query(`SELECT id,game,currency,bet,choice,die_one "dieOne",die_two "dieTwo",outcome,payout,net,created_at "createdAt" FROM casino_plays WHERE account_id=$1 AND client_round_id=$2`,[accountId,clientRoundId])
+    if(previous.rowCount){const wallet=(await client.query("SELECT jade,obsidian,gold FROM player_wallets WHERE account_id=$1",[accountId])).rows[0]||{jade:0,obsidian:0,gold:0};await client.query("COMMIT");return {...previous.rows[0],wallet,replayed:true}}
+    await client.query("INSERT INTO player_wallets (account_id) VALUES ($1) ON CONFLICT DO NOTHING",[accountId])
+    const wallet=(await client.query("SELECT jade,obsidian,gold FROM player_wallets WHERE account_id=$1 FOR UPDATE",[accountId])).rows[0]
+    if(Number(wallet[currency])<bet){await client.query("ROLLBACK");return null}
+    const net=payout-bet
+    await client.query(`UPDATE player_wallets SET ${currency}=${currency}+$2,updated_at=now() WHERE account_id=$1`,[accountId,net])
+    const played=(await client.query(`INSERT INTO casino_plays (id,account_id,client_round_id,game,currency,bet,choice,die_one,die_two,outcome,payout,net) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,game,currency,bet,choice,die_one "dieOne",die_two "dieTwo",outcome,payout,net,created_at "createdAt"`,[id,accountId,clientRoundId,game,currency,bet,choice,dieOne,dieTwo,outcome,payout,net])).rows[0]
+    const updated=(await client.query("SELECT jade,obsidian,gold FROM player_wallets WHERE account_id=$1",[accountId])).rows[0]
+    await client.query("COMMIT");return {...played,wallet:updated,replayed:false}
+  }catch(error){await client.query("ROLLBACK");throw error}finally{client.release()}
+}
+const getCasinoHistory = async(accountId) => (await pool.query(`SELECT id,game,currency,bet,choice,die_one "dieOne",die_two "dieTwo",outcome,payout,net,created_at "createdAt" FROM casino_plays WHERE account_id=$1 ORDER BY created_at DESC LIMIT 12`,[accountId])).rows
+
 async function getAdminSummary() {
   const result=await pool.query(`SELECT count(*)::int users,
     count(*) FILTER (WHERE active)::int active_users,
@@ -230,3 +248,5 @@ module.exports.createPasswordReset=createPasswordReset
 module.exports.findPasswordReset=findPasswordReset
 module.exports.consumePasswordReset=consumePasswordReset
 module.exports.invalidatePasswordReset=invalidatePasswordReset
+module.exports.playCasinoRound=playCasinoRound
+module.exports.getCasinoHistory=getCasinoHistory

@@ -1,0 +1,11 @@
+BEGIN;
+ALTER TABLE casino_plays DROP CONSTRAINT casino_plays_game_check;
+ALTER TABLE casino_plays ADD CONSTRAINT casino_plays_game_check CHECK (game IN ('dados-ajaw','sol-luna'));
+ALTER TABLE casino_plays DROP CONSTRAINT casino_plays_choice_check;
+ALTER TABLE casino_plays ADD CONSTRAINT casino_plays_choice_check CHECK (choice IN ('bajo','siete','alto','sol','luna'));
+ALTER TABLE casino_plays ALTER COLUMN die_one DROP NOT NULL;
+ALTER TABLE casino_plays ALTER COLUMN die_two DROP NOT NULL;
+ALTER TABLE casino_plays ADD COLUMN outcome text;
+UPDATE casino_plays SET outcome=(die_one+die_two)::text WHERE game='dados-ajaw';
+ALTER TABLE casino_plays ALTER COLUMN outcome SET NOT NULL;
+COMMIT;
