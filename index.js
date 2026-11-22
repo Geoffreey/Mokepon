@@ -26,6 +26,8 @@ const MISIONES = [
   {id:"voz-lago",name:"La voz del lago",description:"Restaura el equilibrio de las aguas sagradas.",enemy:"Iq'",requires:"fuego-ancestral",reward:{jade:60,obsidian:20,gold:180},unlock:{type:"arena",id:"santuario-lago"}}
 ]
 const CASINO_LIMITS={jade:{min:1,max:100},obsidian:{min:1,max:50},gold:{min:10,max:1000}}
+const MACHINE_WIN_REWARD={jade:5,obsidian:1,gold:25}
+const MACHINE_DAILY_REWARD_LIMIT=20
 const CASINO_MULTIPLIERS={bajo:190,siete:550,alto:190}
 const MAX_JUGADORES_SALA = 8
 const jugadores = []
@@ -204,8 +206,9 @@ app.get("/aventura/progreso",autenticarCuenta,async(req,res,next)=>{try{
   res.set("Cache-Control","no-store");res.json({...progress,guardianesPremium:catalogoPremium(stats),missions:MISIONES.map((mission)=>({...mission,unlocked:!mission.requires||completed.has(mission.requires),completed:completed.has(mission.id)}))})
 }catch(error){next(error)}})
 app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
-  const mode=req.body?.mode,guardian=req.body?.guardian,attacks=req.body?.attacks
+  const mode=req.body?.mode,guardian=req.body?.guardian,attacks=req.body?.attacks,clientBattleId=String(req.body?.clientBattleId||"")
   if(!["maquina","mision"].includes(mode)||!MOKEPONES_VALIDOS.has(guardian)||!Array.isArray(attacks)||attacks.length!==5||attacks.some((a)=>!ATAQUES_VALIDOS.has(a)))return res.status(400).json({error:"Combate inválido."})
+  if(mode==="maquina"&&!/^[0-9a-f-]{36}$/i.test(clientBattleId))return res.status(400).json({error:"Identificador de combate inválido."})
   const stats=await estadisticas(req.cuenta),requisitoPremium=REQUISITOS_PREMIUM.get(guardian)
   if(!guardianDesbloqueado(guardian,stats))return res.status(403).json({error:`${guardian} todavía está bloqueado.`,requisito:requisitoPremium})
   let mission=null
@@ -219,9 +222,10 @@ app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)
   let playerRounds=0,enemyRounds=0;for(let i=0;i<5;i++){if(gana(attacks[i],enemyAttacks[i]))playerRounds++;else if(gana(enemyAttacks[i],attacks[i]))enemyRounds++}
   const result=playerRounds===enemyRounds?"empate":playerRounds>enemyRounds?"victoria":"derrota"
   let missionResult=null;if(mission&&result==="victoria")missionResult=await db.completeMission(req.cuenta.id,mission)
+  const economy=mode==="maquina"?await db.recordMachineBattle({id:clientBattleId,accountId:req.cuenta.id,outcome:result,reward:MACHINE_WIN_REWARD,dailyLimit:MACHINE_DAILY_REWARD_LIMIT}):null
   const requestedEnemy=MOKEPONES_VALIDOS.has(req.body?.enemy)&&req.body.enemy!==guardian?req.body.enemy:null
   const possibleEnemies=[...MOKEPONES_VALIDOS].filter((name)=>name!==guardian)
-  res.json({enemy:mission?.enemy||requestedEnemy||possibleEnemies[randomInt(0,possibleEnemies.length)],enemyAttacks,playerRounds,enemyRounds,result,missionResult})
+  res.json({enemy:mission?.enemy||requestedEnemy||possibleEnemies[randomInt(0,possibleEnemies.length)],enemyAttacks,playerRounds,enemyRounds,result,missionResult,economy})
 }catch(error){next(error)}})
 app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
 app.get("/casino",autenticarCuenta,async(req,res,next)=>{try{const [progress,history]=await Promise.all([db.getAdventureProgress(req.cuenta.id),db.getCasinoHistory(req.cuenta.id)]);res.set("Cache-Control","no-store");res.json({wallet:progress.wallet,history,limits:CASINO_LIMITS,multipliers:CASINO_MULTIPLIERS})}catch(error){next(error)}})
@@ -370,7 +374,7 @@ app.post("/mokepon/:jugadorId/desafio",limiteAcciones,autenticarJugador,autoriza
   const rival=buscarJugador(req.body?.enemigoId)
   if(!rival||!req.jugador.salaId||rival.salaId!==req.jugador.salaId||req.jugador.estadoJuego!=="arena"||rival.estadoJuego!=="arena")return res.status(404).json({error:"Rival no disponible."})
   if((req.jugador.oponenteId&&req.jugador.oponenteId!==rival.id)||(rival.oponenteId&&rival.oponenteId!==req.jugador.id))return res.status(409).json({error:"Uno de los jugadores ya está en batalla."})
-  const dueloId=randomUUID();req.jugador.oponenteId=rival.id;rival.oponenteId=req.jugador.id;req.jugador.dueloId=dueloId;rival.dueloId=dueloId;req.jugador.ataques=[];rival.ataques=[];req.jugador.estadoJuego="batalla";rival.estadoJuego="batalla";res.status(204).end()
+  const dueloId=randomUUID();req.jugador.oponenteId=rival.id;rival.oponenteId=req.jugador.id;req.jugador.dueloId=dueloId;rival.dueloId=dueloId;req.jugador.ataques=[];rival.ataques=[];req.jugador.economiaDuelo=null;rival.economiaDuelo=null;req.jugador.estadoJuego="batalla";rival.estadoJuego="batalla";res.status(204).end()
 })
 app.post("/mokepon/:jugadorId/ataques",limiteAcciones,autenticarJugador,autorizarJugadorPropio,(req,res)=>{
   const ataques=req.body.ataques;if(!req.jugador.oponenteId)return res.status(409).json({error:"No tienes un duelo activo."})
@@ -381,15 +385,20 @@ app.get("/mokepon/:jugadorId/ataques",autenticarJugador,async(req,res,next)=>{tr
   const rival=buscarJugador(req.params.jugadorId)
   if(!rival||req.jugador.oponenteId!==rival.id||rival.oponenteId!==req.jugador.id||rival.salaId!==req.jugador.salaId)return res.status(403).json({error:"Este jugador no es tu rival activo."})
   if(rival.ataques?.length===5&&req.jugador.ataques?.length===5) await registrarResultado(req.jugador,rival)
-  res.set("Cache-Control","no-store");res.json({ataques:rival.ataques||[]})
+  const economy=req.jugador.economiaDuelo?.dueloId===req.jugador.dueloId?req.jugador.economiaDuelo:null
+  res.set("Cache-Control","no-store");res.json({ataques:rival.ataques||[],economy})
 }catch(error){next(error)}})
 function gana(a,b){return(a==="FUEGO"&&b==="TIERRA")||(a==="AGUA"&&b==="FUEGO")||(a==="TIERRA"&&b==="AGUA")}
 async function registrarResultado(jugador,rival){
-  if(!jugador.dueloId||jugador.dueloRegistrado===jugador.dueloId||rival.dueloRegistrado===jugador.dueloId)return
+  if(!jugador.dueloId||jugador.dueloRegistrado===jugador.dueloId||rival.dueloRegistrado===jugador.dueloId||jugador.dueloRegistrando===jugador.dueloId||rival.dueloRegistrando===jugador.dueloId)return
+  const dueloId=jugador.dueloId;jugador.dueloRegistrando=dueloId;rival.dueloRegistrando=dueloId
   let rondasJugador=0,rondasRival=0;for(let i=0;i<5;i++){if(gana(jugador.ataques[i],rival.ataques[i]))rondasJugador++;else if(gana(rival.ataques[i],jugador.ataques[i]))rondasRival++}
   const resultadoJugador=rondasJugador===rondasRival?"empate":rondasJugador>rondasRival?"victoria":"derrota", resultadoRival=resultadoJugador==="empate"?"empate":resultadoJugador==="victoria"?"derrota":"victoria"
-  await db.recordBattle({id:jugador.dueloId,one:{accountId:jugador.cuentaId,guardian:jugador.mokepon?.nombre||null,result:resultadoJugador,rounds:rondasJugador},two:{accountId:rival.cuentaId,guardian:rival.mokepon?.nombre||null,result:resultadoRival,rounds:rondasRival}})
-  jugador.dueloRegistrado=jugador.dueloId;rival.dueloRegistrado=jugador.dueloId
+  try{
+    const recorded=await db.recordBattle({id:dueloId,one:{accountId:jugador.cuentaId,guardian:jugador.mokepon?.nombre||null,result:resultadoJugador,rounds:rondasJugador},two:{accountId:rival.cuentaId,guardian:rival.mokepon?.nombre||null,result:resultadoRival,rounds:rondasRival}}),economy=recorded.economy
+    if(economy){for(const participante of [jugador,rival]){const won=participante.cuentaId===economy.winnerId,lost=participante.cuentaId===economy.loserId;participante.economiaDuelo={dueloId,type:"pvp",role:won?"winner":lost?"loser":"draw",delta:{jade:won?economy.transfer.jade:lost?-economy.transfer.jade:0,obsidian:won?economy.transfer.obsidian:lost?-economy.transfer.obsidian:0,gold:won?economy.transfer.gold:lost?-economy.transfer.gold:0}}}}
+    jugador.dueloRegistrado=dueloId;rival.dueloRegistrado=dueloId
+  }finally{jugador.dueloRegistrando=null;rival.dueloRegistrando=null}
 }
 app.post("/mokepon/:jugadorId/finalizar",limiteAcciones,autenticarJugador,autorizarJugadorPropio,async(req,res,next)=>{try{
   const rival=buscarJugador(req.jugador.oponenteId)

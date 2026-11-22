@@ -112,7 +112,7 @@ async function recordBattle(battle) {
     await client.query("BEGIN")
     const inserted=await client.query(`INSERT INTO battles (id,player_one_id,player_two_id,player_one_guardian,player_two_guardian,player_one_rounds,player_two_rounds)
       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING id`,[battle.id,battle.one.accountId,battle.two.accountId,battle.one.guardian,battle.two.guardian,battle.one.rounds,battle.two.rounds])
-    if(!inserted.rowCount){await client.query("ROLLBACK");return false}
+    if(!inserted.rowCount){await client.query("ROLLBACK");return {recorded:false,economy:null}}
     for(const [side,opponent] of [[battle.one,battle.two],[battle.two,battle.one]]){
       const points=side.result==="victoria"?30:side.result==="empate"?10:5
       await client.query(`INSERT INTO battle_results (battle_id,account_id,opponent_id,result,points_awarded,rounds_for,rounds_against) VALUES ($1,$2,$3,$4,$5,$6,$7)`,[battle.id,side.accountId,opponent.accountId,side.result,points,side.rounds,opponent.rounds])
@@ -120,8 +120,43 @@ async function recordBattle(battle) {
         wins_count=wins_count+($3='victoria')::int,losses_count=losses_count+($3='derrota')::int,
         draws_count=draws_count+($3='empate')::int,updated_at=now() WHERE id=$1`,[side.accountId,points,side.result])
     }
-    await client.query("COMMIT");return true
+    let economy={type:"pvp",winnerId:null,loserId:null,transfer:{jade:0,obsidian:0,gold:0}}
+    const winner=battle.one.result==="victoria"?battle.one:battle.two.result==="victoria"?battle.two:null,loser=winner?(winner===battle.one?battle.two:battle.one):null
+    await client.query("INSERT INTO player_wallets (account_id) VALUES ($1),($2) ON CONFLICT DO NOTHING",[battle.one.accountId,battle.two.accountId])
+    const wallets=(await client.query("SELECT account_id,jade,obsidian,gold FROM player_wallets WHERE account_id=ANY($1::uuid[]) ORDER BY account_id FOR UPDATE",[[battle.one.accountId,battle.two.accountId]])).rows
+    if(winner&&loser){
+      const loserWallet=wallets.find((wallet)=>wallet.account_id===loser.accountId),transfer={jade:Math.min(Number(loserWallet?.jade||0),3),obsidian:Math.min(Number(loserWallet?.obsidian||0),1),gold:Math.min(Number(loserWallet?.gold||0),20)}
+      await client.query("UPDATE player_wallets SET jade=jade+$2,obsidian=obsidian+$3,gold=gold+$4,updated_at=now() WHERE account_id=$1",[winner.accountId,transfer.jade,transfer.obsidian,transfer.gold])
+      await client.query("UPDATE player_wallets SET jade=jade-$2,obsidian=obsidian-$3,gold=gold-$4,updated_at=now() WHERE account_id=$1",[loser.accountId,transfer.jade,transfer.obsidian,transfer.gold])
+      economy={type:"pvp",winnerId:winner.accountId,loserId:loser.accountId,transfer}
+    }
+    for(const side of [battle.one,battle.two]){
+      const won=side.accountId===economy.winnerId,lost=side.accountId===economy.loserId,delta={jade:won?economy.transfer.jade:lost?-economy.transfer.jade:0,obsidian:won?economy.transfer.obsidian:lost?-economy.transfer.obsidian:0,gold:won?economy.transfer.gold:lost?-economy.transfer.gold:0},opponent=side===battle.one?battle.two:battle.one
+      await client.query(`INSERT INTO combat_economy_events (id,source_type,source_id,account_id,opponent_id,outcome,jade_delta,obsidian_delta,gold_delta)
+        VALUES (gen_random_uuid(),'pvp',$1,$2,$3,$4,$5,$6,$7)`,[battle.id,side.accountId,opponent.accountId,side.result,delta.jade,delta.obsidian,delta.gold])
+    }
+    await client.query("COMMIT");return {recorded:true,economy}
   } catch(error){await client.query("ROLLBACK");throw error}finally{client.release()}
+}
+
+async function recordMachineBattle({id,accountId,outcome,reward,dailyLimit=20}) {
+  const client=await pool.connect()
+  try{
+    await client.query("BEGIN")
+    const previous=(await client.query(`SELECT outcome,jade_delta,obsidian_delta,gold_delta,capped FROM combat_economy_events
+      WHERE source_type='machine' AND source_id=$1 AND account_id=$2`,[id,accountId])).rows[0]
+    if(previous){const wallet=(await client.query("SELECT jade,obsidian,gold FROM player_wallets WHERE account_id=$1",[accountId])).rows[0]||{jade:0,obsidian:0,gold:0};await client.query("COMMIT");return {reward:{jade:previous.jade_delta,obsidian:previous.obsidian_delta,gold:previous.gold_delta},wallet,capped:previous.capped,replayed:true}}
+    await client.query("INSERT INTO player_wallets (account_id) VALUES ($1) ON CONFLICT DO NOTHING",[accountId])
+    await client.query("SELECT account_id FROM player_wallets WHERE account_id=$1 FOR UPDATE",[accountId])
+    const rewardedToday=Number((await client.query(`SELECT count(*)::int count FROM combat_economy_events
+      WHERE account_id=$1 AND source_type='machine' AND outcome='victoria' AND (jade_delta>0 OR obsidian_delta>0 OR gold_delta>0) AND created_at>=date_trunc('day',now())`,[accountId])).rows[0].count),capped=outcome==="victoria"&&rewardedToday>=dailyLimit
+    const delta=outcome==="victoria"&&!capped?reward:{jade:0,obsidian:0,gold:0}
+    await client.query(`INSERT INTO combat_economy_events (id,source_type,source_id,account_id,outcome,jade_delta,obsidian_delta,gold_delta,capped)
+      VALUES (gen_random_uuid(),'machine',$1,$2,$3,$4,$5,$6,$7)`,[id,accountId,outcome,delta.jade,delta.obsidian,delta.gold,capped])
+    if(delta.jade||delta.obsidian||delta.gold)await client.query("UPDATE player_wallets SET jade=jade+$2,obsidian=obsidian+$3,gold=gold+$4,updated_at=now() WHERE account_id=$1",[accountId,delta.jade,delta.obsidian,delta.gold])
+    const wallet=(await client.query("SELECT jade,obsidian,gold FROM player_wallets WHERE account_id=$1",[accountId])).rows[0]
+    await client.query("COMMIT");return {reward:delta,wallet,capped,replayed:false}
+  }catch(error){await client.query("ROLLBACK");throw error}finally{client.release()}
 }
 
 async function getAdventureProgress(accountId) {
@@ -242,7 +277,7 @@ async function consumePasswordReset(tokenHash,passwordSalt,passwordHash) {
 
 module.exports={initialize,close:()=>pool.end(),findAccountByUsername,findAccountByEmail,findAccountById,findAccountBySession,
   createPendingAccount,deleteAccount,replaceActivation,updateResendHash,incrementActivationAttempts,activateAccount,
-  createSession,deleteSession,getStatistics,recordBattle,getAdventureProgress,completeMission,insertAudit,getAdminSummary,listAdminUsers,
+  createSession,deleteSession,getStatistics,recordBattle,recordMachineBattle,getAdventureProgress,completeMission,insertAudit,getAdminSummary,listAdminUsers,
   getAdminUser,listAuditEvents,setAccountActive,revokeAccountSessions,addSupportNote}
 module.exports.createPasswordReset=createPasswordReset
 module.exports.findPasswordReset=findPasswordReset

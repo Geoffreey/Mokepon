@@ -3,12 +3,15 @@ const assert = require("node:assert/strict")
 const { spawn } = require("node:child_process")
 const path = require("node:path")
 const { Pool } = require("pg")
+const { randomUUID } = require("node:crypto")
+const db = require("../db")
 
 test("registra, activa e inicia sesión y genera auditoría", async (t) => {
   const port = 18080 + Math.floor(Math.random() * 1000)
   const username = `prueba_${Date.now()}`
   const email = `${username}@example.com`
   const pool = new Pool({connectionString:process.env.DATABASE_URL})
+  t.after(() => db.close())
   const server = spawn(process.execPath, [path.join(__dirname, "..", "index.js")], {
     env:{ ...process.env, PORT:String(port), NODE_ENV:"development", RECAPTCHA_SITE_KEY:"", RECAPTCHA_SECRET_KEY:"", SMTP_HOST:"", SMTP_USER:"", SMTP_PASSWORD:"", EMAIL_FROM:"" },
     stdio:["ignore","pipe","pipe"]
@@ -36,7 +39,7 @@ test("registra, activa e inicia sesión y genera auditoría", async (t) => {
   assert.deepEqual(eventos,["registro_pendiente","cuenta_activada","login_exitoso"])
   const account=(await pool.query("SELECT active,points,battles_count FROM accounts WHERE username=$1",[username])).rows[0]
   assert.deepEqual(account,{active:true,points:0,battles_count:0})
-  const combatePremium=(guardian) => fetch(`http://127.0.0.1:${port}/aventura/combate`,{method:"POST",headers:{Authorization:`Bearer ${datosLogin.token}`,"Content-Type":"application/json"},body:JSON.stringify({mode:"maquina",guardian,attacks:["FUEGO","AGUA","TIERRA","FUEGO","AGUA"]})})
+  const combatePremium=(guardian) => fetch(`http://127.0.0.1:${port}/aventura/combate`,{method:"POST",headers:{Authorization:`Bearer ${datosLogin.token}`,"Content-Type":"application/json"},body:JSON.stringify({mode:"maquina",clientBattleId:randomUUID(),guardian,attacks:["FUEGO","AGUA","TIERRA","FUEGO","AGUA"]})})
   assert.equal((await combatePremium("B'atz")).status,403)
   await pool.query("UPDATE accounts SET points=500,battles_count=10,wins_count=10 WHERE username=$1",[username])
   assert.equal((await combatePremium("B'atz")).status,200)
@@ -51,6 +54,22 @@ test("registra, activa e inicia sesión y genera auditoría", async (t) => {
   assert.equal(adminSummary.status,200)
   assert.ok((await adminSummary.json()).users>=1)
   const userId=(await pool.query("SELECT id FROM accounts WHERE username=$1",[username])).rows[0].id
+  await pool.query("INSERT INTO player_wallets (account_id) VALUES ($1) ON CONFLICT (account_id) DO UPDATE SET jade=0,obsidian=0,gold=0,updated_at=now()",[userId])
+  const machineBattleId=randomUUID(),machineReward=await db.recordMachineBattle({id:machineBattleId,accountId:userId,outcome:"victoria",reward:{jade:5,obsidian:1,gold:25},dailyLimit:20})
+  assert.deepEqual(machineReward.reward,{jade:5,obsidian:1,gold:25})
+  const machineReplay=await db.recordMachineBattle({id:machineBattleId,accountId:userId,outcome:"victoria",reward:{jade:5,obsidian:1,gold:25},dailyLimit:20})
+  assert.equal(machineReplay.replayed,true)
+  assert.deepEqual(machineReplay.wallet,{jade:5,obsidian:1,gold:25})
+  const opponentId=randomUUID(),opponentUsername=`rival_${Date.now()}`,economyBattleId=randomUUID()
+  await pool.query(`INSERT INTO accounts (id,username,display_name,email,password_salt,password_hash,active) VALUES ($1,$2,'Rival',$3,'test',$4,true)`,[opponentId,opponentUsername,`${opponentUsername}@example.com`,"0".repeat(128)])
+  await pool.query("INSERT INTO player_wallets (account_id,jade,obsidian,gold) VALUES ($1,10,5,100),($2,2,0,7) ON CONFLICT (account_id) DO UPDATE SET jade=EXCLUDED.jade,obsidian=EXCLUDED.obsidian,gold=EXCLUDED.gold",[userId,opponentId])
+  const pvpReward=await db.recordBattle({id:economyBattleId,one:{accountId:userId,guardian:"B'alam",result:"victoria",rounds:3},two:{accountId:opponentId,guardian:"Kabrak",result:"derrota",rounds:2}})
+  assert.deepEqual(pvpReward.economy.transfer,{jade:2,obsidian:0,gold:7})
+  const wallets=(await pool.query("SELECT account_id,jade,obsidian,gold FROM player_wallets WHERE account_id=ANY($1::uuid[]) ORDER BY account_id",[[userId,opponentId]])).rows
+  const winnerWallet=wallets.find((wallet)=>wallet.account_id===userId),loserWallet=wallets.find((wallet)=>wallet.account_id===opponentId)
+  assert.deepEqual({jade:winnerWallet.jade,obsidian:winnerWallet.obsidian,gold:winnerWallet.gold},{jade:12,obsidian:5,gold:107})
+  assert.deepEqual({jade:loserWallet.jade,obsidian:loserWallet.obsidian,gold:loserWallet.gold},{jade:0,obsidian:0,gold:0})
+  assert.equal((await db.recordBattle({id:economyBattleId,one:{accountId:userId,guardian:"B'alam",result:"victoria",rounds:3},two:{accountId:opponentId,guardian:"Kabrak",result:"derrota",rounds:2}})).recorded,false)
   const note=await fetch(`http://127.0.0.1:${port}/admin/api/usuarios/${userId}/notas`,{method:"POST",headers:{Authorization:`Bearer ${datosLogin.token}`,"Content-Type":"application/json"},body:JSON.stringify({nota:"Caso de soporte de prueba"})})
   assert.equal(note.status,201)
   assert.equal((await pool.query("SELECT count(*)::int count FROM support_notes WHERE account_id=$1",[userId])).rows[0].count,1)
@@ -76,6 +95,7 @@ test("registra, activa e inicia sesión y genera auditoría", async (t) => {
   assert.equal((await request("/auth/restablecer/completar",{token:selfToken,clave:"clave-final-segura-789"})).status,200)
   assert.equal((await request("/auth/restablecer/completar",{token:selfToken,clave:"otra-clave-segura-789"})).status,400)
   assert.ok(datosRegistro.reenvioToken)
-  await pool.query("DELETE FROM accounts WHERE username=$1",[username])
+  await pool.query("DELETE FROM battles WHERE id=$1",[economyBattleId])
+  await pool.query("DELETE FROM accounts WHERE id=ANY($1::uuid[])",[[userId,opponentId]])
   await pool.end()
 })

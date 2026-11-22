@@ -15,6 +15,6 @@ EXPOSE 8080
 USER node
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:8080', { headers: { 'x-forwarded-proto': 'https' } }).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD wget -q --spider --header='X-Forwarded-Proto: https' http://127.0.0.1:8080/ || exit 1
 
 CMD ["node", "index.js"]
