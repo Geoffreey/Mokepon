@@ -39,13 +39,15 @@ test("registra, activa e inicia sesión y genera auditoría", async (t) => {
   assert.deepEqual(eventos,["registro_pendiente","cuenta_activada","login_exitoso"])
   const account=(await pool.query("SELECT active,points,battles_count FROM accounts WHERE username=$1",[username])).rows[0]
   assert.deepEqual(account,{active:true,points:0,battles_count:0})
-  const combatePremium=(guardian) => fetch(`http://127.0.0.1:${port}/aventura/combate`,{method:"POST",headers:{Authorization:`Bearer ${datosLogin.token}`,"Content-Type":"application/json"},body:JSON.stringify({mode:"maquina",clientBattleId:randomUUID(),guardian,attacks:["FUEGO","AGUA","TIERRA","FUEGO","AGUA"]})})
+  const joined=await (await fetch(`http://127.0.0.1:${port}/unirse`,{method:'POST',headers:{Authorization:`Bearer ${datosLogin.token}`,'Content-Type':'application/json'},body:'{}'})).json()
+  const combatePremium=(guardian)=>fetch(`http://127.0.0.1:${port}/combate/iniciar`,{method:'POST',headers:{Authorization:`Bearer ${joined.token}`,'Content-Type':'application/json'},body:JSON.stringify({mode:'maquina',guardian})})
+  const abandonar=async(response)=>{const run=await response.json();await fetch(`http://127.0.0.1:${port}/combate/${run.id}/abandonar`,{method:'POST',headers:{Authorization:`Bearer ${joined.token}`}})}
   assert.equal((await combatePremium("B'atz")).status,403)
   await pool.query("UPDATE accounts SET points=500,battles_count=10,wins_count=10 WHERE username=$1",[username])
-  assert.equal((await combatePremium("B'atz")).status,200)
+  const batzRun=await combatePremium("B'atz");assert.equal(batzRun.status,201);await abandonar(batzRun)
   assert.equal((await combatePremium("Tacuatzin")).status,403)
   await pool.query("UPDATE accounts SET points=1200,battles_count=25,wins_count=25 WHERE username=$1",[username])
-  assert.equal((await combatePremium("Tacuatzin")).status,200)
+  const tacuatzinRun=await combatePremium("Tacuatzin");assert.equal(tacuatzinRun.status,201);await abandonar(tacuatzinRun)
   const progreso=await fetch(`http://127.0.0.1:${port}/aventura/progreso`,{headers:{Authorization:`Bearer ${datosLogin.token}`}})
   assert.equal(progreso.status,200)
   assert.deepEqual((await progreso.json()).guardianesPremium.map(({nombre,desbloqueado})=>({nombre,desbloqueado})),[{nombre:"B'atz",desbloqueado:true},{nombre:"Tacuatzin",desbloqueado:true}])

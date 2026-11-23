@@ -50,7 +50,7 @@ test('caer consume vidas, conserva tesoros y termina al agotar tres',()=>{
   assert.equal(s.status,'lost');assert.equal(s.player.lives,0);assert.equal(s.loot.gold,3)
 })
 test('repeticiones inválidas, excesivas o posteriores al final se rechazan',()=>{
-  for(const inputs of [null,[],[[32,1]],[[1,-1]],[[1,1.5]],[[0,A.MAX_TICKS+1]],Array(12001).fill([0,1])])assert.throws(()=>A.replay('selva',inputs))
+  for(const inputs of [null,[],[[64,1]],[[1,-1]],[[1,1.5]],[[0,A.MAX_TICKS+1]],Array(12001).fill([0,1])])assert.throws(()=>A.replay('selva',inputs))
   const {inputs}=winningReplay('selva');assert.throws(()=>A.replay('selva',[...inputs,[0,1]]))
   assert.notEqual(A.replay('selva',[[0,100]]).status,'won')
 })

@@ -260,3 +260,31 @@ conocido sin `mapping`. Se verificaron menús y arcade en Chrome aislado, con
 viewport móvil exacto (390×844 y 844×390), áreas seguras simuladas y entradas de
 mando simuladas. La comprobación física en Safari/iPhone con DualSense sigue
 requiriendo el dispositivo real.
+
+
+## Duelos en tiempo real
+
+Los duelos contra la máquina, las misiones y las salas en línea usan una arena
+de plataformas: moverse, saltar, golpear, lanzar el poder del guardián y defender.
+El escudo bloquea de frente, consume energía y se recupera al soltarlo. También
+está disponible en Arcade. Teclado: A/D o flechas, espacio, J/X, K/Z y L/Shift.
+DualSense: palanca izquierda, ✕, □, ○/R2 y R1/L1. La guía aparece antes del duelo.
+
+`public/js/duel-engine.js` comparte la simulación entre navegador y servidor.
+`server/combat-service.js` controla el reloj a 60 Hz, salud, impactos y resultado;
+el cliente envía únicamente controles y secuencias y predice el dibujo. Las
+rutas antiguas de ataques por turnos y resultados declarados devuelven 410.
+Las recompensas y estadísticas conservan sus reglas y se guardan una sola vez.
+
+Ambos jugadores deben confirmar que están listos. La espera vence a los 60 s.
+En línea no hay pausa y una desconexión de 15 s cuenta como abandono. Contra
+la máquina y en misiones se puede pausar; una desconexión vence a los 120 s.
+Los combates duran hasta tres minutos activos; gana quien conserve más salud
+al agotarse el tiempo. Los combates activos están en memoria y un reinicio
+del servicio los interrumpe.
+
+La cámara mantiene ambos guardianes visibles sin deformar la imagen. Las
+vistas vertical y horizontal conservan áreas seguras, controles táctiles y
+protección contra zoom accidental. Verificación: `docker exec mokepon npm test`
+y revisión visual en 390×844, 844×390 y 1280×720. La emulación de mando no
+sustituye una prueba física en iPhone con DualSense.

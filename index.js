@@ -6,6 +6,7 @@ const { scryptSync, timingSafeEqual, createHash } = require("crypto")
 const nodemailer = require("nodemailer")
 const db = require("./db")
 const arcade = require("./public/js/arcade-engine")
+const CombatService=require("./server/combat-service")
 const app = express()
 const PORT = process.env.PORT || 8080
 const esProduccion = process.env.NODE_ENV === "production"
@@ -155,6 +156,7 @@ function autorizarJugadorPropio(req,res,next) {
   next()
 }
 function abandonarSala(jugador) {
+  if(jugador.dueloId)combateService.abandon(jugador.dueloId,jugador.cuentaId)
   if(!jugador.salaId) return
   const sala=buscarSala(jugador.salaId)
   if(!sala) return
@@ -174,6 +176,51 @@ function resumenSala(sala,jugador) {
 }
 
 async function crearLogin(cuenta) { const token=randomUUID()+randomUUID();await db.createSession(cuenta.id,hashToken(token),Date.now()+DURACION_LOGIN_MS);return token }
+const combateService=new CombatService({persist:guardarCombateTiempoReal})
+const limiteCombate=rateLimit({windowMs:1000,limit:240,standardHeaders:"draft-8",legacyHeaders:false})
+setInterval(()=>combateService.advance(),1000/60).unref()
+async function guardarCombateTiempoReal(match){
+  const outcome=i=>match.state.winner===null?"empate":match.state.winner===i?"victoria":"derrota"
+  if(match.mode==='pvp'){
+    await db.recordBattle({id:match.id,one:{accountId:match.participants[0].accountId,guardian:match.participants[0].guardian,result:outcome(0),rounds:match.state.winner===0?1:0},two:{accountId:match.participants[1].accountId,guardian:match.participants[1].guardian,result:outcome(1),rounds:match.state.winner===1?1:0}})
+    return Promise.all(match.participants.map(async(p,i)=>({outcome:outcome(i),reason:match.state.reason,economy:await db.getCombatEconomy(match.id,p.accountId)})))
+  }
+  const missionResult=match.mode==='mision'&&outcome(0)==='victoria'?await db.completeMission(match.participants[0].accountId,match.mission):null
+  const economy=match.mode==='maquina'?await db.recordMachineBattle({id:match.id,accountId:match.participants[0].accountId,outcome:outcome(0),reward:MACHINE_WIN_REWARD,dailyLimit:MACHINE_DAILY_REWARD_LIMIT}):null
+  return [{outcome:outcome(0),reason:match.state.reason,economy,missionResult}]
+}
+app.post('/combate/iniciar',limiteAcciones,autenticarJugador,async(req,res,next)=>{try{
+  const mode=req.body?.mode,guardian=req.body?.guardian,skin=req.body?.skin||'clasico'
+  if(!['maquina','mision'].includes(mode)||!MOKEPONES_VALIDOS.has(guardian))return res.status(400).json({error:'Combate inválido.'})
+  if(req.jugador.estadoJuego==='batalla')return res.status(409).json({error:'Termina tu duelo en línea antes de entrenar.'})
+  const [stats,progress]=await Promise.all([db.getStatistics(req.jugador.cuentaId),db.getAdventureProgress(req.jugador.cuentaId)])
+  if(!guardianDesbloqueado(guardian,stats))return res.status(403).json({error:'Este guardián todavía está bloqueado.'})
+  if(!(skin==='clasico'||(guardian==="B'alam"&&skin==='balam-nocturno'&&progress.unlocks.some(u=>u.type==='skin'&&u.id===skin))))return res.status(403).json({error:'Este aspecto todavía está bloqueado.'})
+  const mission=mode==='mision'?MISIONES.find(m=>m.id===req.body?.missionId):null
+  if(mode==='mision'&&!mission)return res.status(400).json({error:'Misión inválida.'})
+  if(mission?.requires&&!progress.completedMissions.includes(mission.requires))return res.status(403).json({error:'Completa la misión anterior.'})
+  const enemies=[...MOKEPONES_VALIDOS].filter(g=>g!==guardian),enemy=mission?.enemy||enemies[randomInt(0,enemies.length)]
+  const match=combateService.create({mode,mission,arena:mission?.id==='fuego-ancestral'?'volcan':mission?.id==='voz-lago'?'lago':'cueva',participants:[{accountId:req.jugador.cuentaId,name:req.jugador.nombre,guardian,skin},{accountId:null,name:mission?'Guardián de misión':'Máquina',guardian:enemy,skin:'clasico'}]})
+  res.set('Cache-Control','no-store');res.status(201).json(combateService.snapshot(match,0))
+}catch(error){if(error.status)return res.status(error.status).json({error:error.message});next(error)}})
+app.get('/combate/:id',autenticarJugador,(req,res)=>{
+  const found=combateService.get(req.params.id,req.jugador.cuentaId)
+  if(!found)return res.status(404).json({error:'No tienes acceso a este combate.'})
+  found.match.seen[found.side]=Date.now();res.set('Cache-Control','no-store');res.json(combateService.snapshot(found.match,found.side))
+})
+app.post('/combate/:id/control',limiteCombate,autenticarJugador,(req,res)=>{
+  const body=req.body||{},valid=Object.keys(body).every(k=>['input','seq','ready','pause'].includes(k))&&Number.isInteger(body.input)&&body.input>=0&&body.input<=63&&Number.isSafeInteger(body.seq)&&body.seq>=0&&body.seq<=1e9&&(body.ready===undefined||typeof body.ready==='boolean')&&(body.pause===undefined||typeof body.pause==='boolean')
+  if(!valid)return res.status(400).json({error:'Controles inválidos.'})
+  const snapshot=combateService.receive(req.params.id,req.jugador.cuentaId,body)
+  if(!snapshot)return res.status(404).json({error:'No tienes acceso a este combate.'})
+  res.set('Cache-Control','no-store');res.json(snapshot)
+})
+app.post('/combate/:id/abandonar',limiteAcciones,autenticarJugador,(req,res)=>{
+  const snapshot=combateService.abandon(req.params.id,req.jugador.cuentaId)
+  if(!snapshot)return res.status(404).json({error:'No tienes acceso a este combate.'})
+  res.set('Cache-Control','no-store');res.json(snapshot)
+})
+
 app.get("/auth/config",(req,res)=>res.json({captchaActivo:CAPTCHA_ACTIVO,recaptchaSiteKey:RECAPTCHA_SITE_KEY,modoDesarrollo:!esProduccion}))
 app.post("/auth/registro",limiteUnirse,async(req,res,next)=>{
   try {
@@ -234,28 +281,7 @@ app.post("/arcade/finalizar",limiteAcciones,autenticarCuenta,async(req,res,next)
   if(!result)return res.status(409).json({error:"Se inició otro intento. Vuelve a jugar esta pantalla."})
   res.set("Cache-Control","no-store");res.json(result)
 }catch(error){next(error)}})
-app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
-  const mode=req.body?.mode,guardian=req.body?.guardian,attacks=req.body?.attacks,clientBattleId=String(req.body?.clientBattleId||"")
-  if(!["maquina","mision"].includes(mode)||!MOKEPONES_VALIDOS.has(guardian)||!Array.isArray(attacks)||attacks.length!==5||attacks.some((a)=>!ATAQUES_VALIDOS.has(a)))return res.status(400).json({error:"Combate inválido."})
-  if(mode==="maquina"&&!/^[0-9a-f-]{36}$/i.test(clientBattleId))return res.status(400).json({error:"Identificador de combate inválido."})
-  const stats=await estadisticas(req.cuenta),requisitoPremium=REQUISITOS_PREMIUM.get(guardian)
-  if(!guardianDesbloqueado(guardian,stats))return res.status(403).json({error:`${guardian} todavía está bloqueado.`,requisito:requisitoPremium})
-  let mission=null
-  if(mode==="mision"){
-    mission=MISIONES.find((item)=>item.id===req.body?.missionId)
-    if(!mission)return res.status(404).json({error:"La misión no existe."})
-    const progress=await db.getAdventureProgress(req.cuenta.id)
-    if(mission.requires&&!progress.completedMissions.includes(mission.requires))return res.status(403).json({error:"Completa la misión anterior para desbloquear esta aventura."})
-  }
-  const options=["FUEGO","AGUA","TIERRA"],enemyAttacks=Array.from({length:5},()=>options[randomInt(0,options.length)])
-  let playerRounds=0,enemyRounds=0;for(let i=0;i<5;i++){if(gana(attacks[i],enemyAttacks[i]))playerRounds++;else if(gana(enemyAttacks[i],attacks[i]))enemyRounds++}
-  const result=playerRounds===enemyRounds?"empate":playerRounds>enemyRounds?"victoria":"derrota"
-  let missionResult=null;if(mission&&result==="victoria")missionResult=await db.completeMission(req.cuenta.id,mission)
-  const economy=mode==="maquina"?await db.recordMachineBattle({id:clientBattleId,accountId:req.cuenta.id,outcome:result,reward:MACHINE_WIN_REWARD,dailyLimit:MACHINE_DAILY_REWARD_LIMIT}):null
-  const requestedEnemy=MOKEPONES_VALIDOS.has(req.body?.enemy)&&req.body.enemy!==guardian?req.body.enemy:null
-  const possibleEnemies=[...MOKEPONES_VALIDOS].filter((name)=>name!==guardian)
-  res.json({enemy:mission?.enemy||requestedEnemy||possibleEnemies[randomInt(0,possibleEnemies.length)],enemyAttacks,playerRounds,enemyRounds,result,missionResult,economy})
-}catch(error){next(error)}})
+app.post("/aventura/combate",autenticarCuenta,(req,res)=>res.status(410).json({error:"Los duelos ahora son en tiempo real. Recarga el juego para actualizarlo."}))
 app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
 app.get("/casino",autenticarCuenta,async(req,res,next)=>{try{const [progress,history]=await Promise.all([db.getAdventureProgress(req.cuenta.id),db.getCasinoHistory(req.cuenta.id)]);res.set("Cache-Control","no-store");res.json({wallet:progress.wallet,history,limits:CASINO_LIMITS,multipliers:CASINO_MULTIPLIERS})}catch(error){next(error)}})
 app.post("/casino/dados-ajaw",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
@@ -372,7 +398,7 @@ app.get("/salas/:salaId/estado",autenticarJugador,(req,res)=>{
   const solicitudes=sala.creadorId===req.jugador.id?sala.solicitudes.map(buscarJugador).filter(Boolean).map(({id,nombre})=>({id,nombre})):[]
   const miembros=sala.miembros.map(buscarJugador).filter(Boolean).map(({id,nombre,mokepon,estadoJuego})=>({id,nombre,guardian:mokepon?.nombre||null,estadoJuego}))
   const rival=buscarJugador(req.jugador.oponenteId)
-  const duelo=req.jugador.estadoJuego==="batalla"&&rival?{enemigoId:rival.id,nombreJugador:rival.nombre,guardian:rival.mokepon?.nombre||null,skin:rival.mokepon?.skin||"clasico"}:null
+  const duelo=req.jugador.estadoJuego==="batalla"&&rival?{enemigoId:rival.id,nombreJugador:rival.nombre,guardian:rival.mokepon?.nombre||null,skin:rival.mokepon?.skin||"clasico",combateId:req.jugador.dueloId}:null
   res.set("Cache-Control","no-store");res.json({...resumenSala(sala,req.jugador),estadoJuego:req.jugador.estadoJuego,duelo,solicitudes,miembros,mensajes:esMiembro(sala,req.jugador.id)?sala.mensajes.slice(-50):[]})
 })
 app.delete("/salas/:salaId/salir",limiteAcciones,autenticarJugador,(req,res)=>{const sala=buscarSala(req.params.salaId);if(sala)sala.solicitudes=sala.solicitudes.filter((id)=>id!==req.jugador.id);abandonarSala(req.jugador);res.status(204).end()})
@@ -389,6 +415,7 @@ app.post("/mokepon/:jugadorId",limiteAcciones,autenticarJugador,autorizarJugador
   if(!guardianDesbloqueado(req.body.mokepon,stats))return res.status(403).json({error:`${req.body.mokepon} todavía está bloqueado.`,requisito:requisitoPremium})
   const skin=req.body?.skin||"clasico",skinValido=skin==="clasico"||(req.body.mokepon==="B'alam"&&skin==="balam-nocturno"&&progress.unlocks.some((u)=>u.type==="skin"&&u.id===skin))
   if(!skinValido)return res.status(403).json({error:"Ese skin todavía no está desbloqueado."})
+  if(req.jugador.estadoJuego==="batalla")return res.status(409).json({error:"Termina tu combate antes de cambiar de guardián."})
   req.jugador.mokepon={nombre:req.body.mokepon,skin};req.jugador.ataques=[];req.jugador.estadoJuego="arena";res.status(204).end()
 }catch(error){next(error)}})
 app.post("/mokepon/:jugadorId/posicion",limitePosicion,autenticarJugador,autorizarJugadorPropio,(req,res)=>{
@@ -401,37 +428,18 @@ app.post("/mokepon/:jugadorId/posicion",limitePosicion,autenticarJugador,autoriz
 })
 app.post("/mokepon/:jugadorId/desafio",limiteAcciones,autenticarJugador,autorizarJugadorPropio,(req,res)=>{
   const rival=buscarJugador(req.body?.enemigoId)
-  if(!rival||!req.jugador.salaId||rival.salaId!==req.jugador.salaId||req.jugador.estadoJuego!=="arena"||rival.estadoJuego!=="arena")return res.status(404).json({error:"Rival no disponible."})
+  if(!rival||rival.cuentaId===req.jugador.cuentaId||!req.jugador.salaId||rival.salaId!==req.jugador.salaId||req.jugador.estadoJuego!=="arena"||rival.estadoJuego!=="arena")return res.status(404).json({error:"Rival no disponible."})
   if((req.jugador.oponenteId&&req.jugador.oponenteId!==rival.id)||(rival.oponenteId&&rival.oponenteId!==req.jugador.id))return res.status(409).json({error:"Uno de los jugadores ya está en batalla."})
-  const dueloId=randomUUID();req.jugador.oponenteId=rival.id;rival.oponenteId=req.jugador.id;req.jugador.dueloId=dueloId;rival.dueloId=dueloId;req.jugador.ataques=[];rival.ataques=[];req.jugador.economiaDuelo=null;rival.economiaDuelo=null;req.jugador.estadoJuego="batalla";rival.estadoJuego="batalla";res.status(204).end()
+  if(!req.jugador.mokepon||!rival.mokepon)return res.status(409).json({error:'Ambos jugadores deben elegir un guardián.'})
+  let match;try{match=combateService.create({mode:'pvp',arena:req.jugador.salaId,participants:[req.jugador,rival].map(p=>({accountId:p.cuentaId,name:p.nombre,guardian:p.mokepon.nombre,skin:p.mokepon.skin}))})}catch(error){return res.status(error.status||409).json({error:error.message})}
+  const dueloId=match.id;req.jugador.oponenteId=rival.id;rival.oponenteId=req.jugador.id;req.jugador.dueloId=dueloId;rival.dueloId=dueloId;req.jugador.ataques=[];rival.ataques=[];req.jugador.economiaDuelo=null;rival.economiaDuelo=null;req.jugador.estadoJuego="batalla";rival.estadoJuego="batalla";res.status(201).json({combateId:dueloId})
 })
-app.post("/mokepon/:jugadorId/ataques",limiteAcciones,autenticarJugador,autorizarJugadorPropio,(req,res)=>{
-  const ataques=req.body.ataques;if(!req.jugador.oponenteId)return res.status(409).json({error:"No tienes un duelo activo."})
-  if(!Array.isArray(ataques)||ataques.length!==5||!ataques.every((a)=>ATAQUES_VALIDOS.has(a)))return res.status(400).json({error:"Secuencia de ataques inválida."})
-  req.jugador.ataques=[...ataques];res.status(204).end()
-})
-app.get("/mokepon/:jugadorId/ataques",autenticarJugador,async(req,res,next)=>{try{
-  const rival=buscarJugador(req.params.jugadorId)
-  if(!rival||req.jugador.oponenteId!==rival.id||rival.oponenteId!==req.jugador.id||rival.salaId!==req.jugador.salaId)return res.status(403).json({error:"Este jugador no es tu rival activo."})
-  if(rival.ataques?.length===5&&req.jugador.ataques?.length===5) await registrarResultado(req.jugador,rival)
-  const economy=req.jugador.economiaDuelo?.dueloId===req.jugador.dueloId?req.jugador.economiaDuelo:null
-  res.set("Cache-Control","no-store");res.json({ataques:rival.ataques||[],economy})
-}catch(error){next(error)}})
-function gana(a,b){return(a==="FUEGO"&&b==="TIERRA")||(a==="AGUA"&&b==="FUEGO")||(a==="TIERRA"&&b==="AGUA")}
-async function registrarResultado(jugador,rival){
-  if(!jugador.dueloId||jugador.dueloRegistrado===jugador.dueloId||rival.dueloRegistrado===jugador.dueloId||jugador.dueloRegistrando===jugador.dueloId||rival.dueloRegistrando===jugador.dueloId)return
-  const dueloId=jugador.dueloId;jugador.dueloRegistrando=dueloId;rival.dueloRegistrando=dueloId
-  let rondasJugador=0,rondasRival=0;for(let i=0;i<5;i++){if(gana(jugador.ataques[i],rival.ataques[i]))rondasJugador++;else if(gana(rival.ataques[i],jugador.ataques[i]))rondasRival++}
-  const resultadoJugador=rondasJugador===rondasRival?"empate":rondasJugador>rondasRival?"victoria":"derrota", resultadoRival=resultadoJugador==="empate"?"empate":resultadoJugador==="victoria"?"derrota":"victoria"
-  try{
-    const recorded=await db.recordBattle({id:dueloId,one:{accountId:jugador.cuentaId,guardian:jugador.mokepon?.nombre||null,result:resultadoJugador,rounds:rondasJugador},two:{accountId:rival.cuentaId,guardian:rival.mokepon?.nombre||null,result:resultadoRival,rounds:rondasRival}}),economy=recorded.economy
-    if(economy){for(const participante of [jugador,rival]){const won=participante.cuentaId===economy.winnerId,lost=participante.cuentaId===economy.loserId;participante.economiaDuelo={dueloId,type:"pvp",role:won?"winner":lost?"loser":"draw",delta:{jade:won?economy.transfer.jade:lost?-economy.transfer.jade:0,obsidian:won?economy.transfer.obsidian:lost?-economy.transfer.obsidian:0,gold:won?economy.transfer.gold:lost?-economy.transfer.gold:0}}}}
-    jugador.dueloRegistrado=dueloId;rival.dueloRegistrado=dueloId
-  }finally{jugador.dueloRegistrando=null;rival.dueloRegistrando=null}
-}
+app.post("/mokepon/:jugadorId/ataques",autenticarJugador,(req,res)=>res.status(410).json({error:'Los duelos ahora son en tiempo real. Recarga el juego.'}))
+app.get("/mokepon/:jugadorId/ataques",autenticarJugador,(req,res)=>res.status(410).json({error:'Los duelos ahora son en tiempo real. Recarga el juego.'}))
 app.post("/mokepon/:jugadorId/finalizar",limiteAcciones,autenticarJugador,autorizarJugadorPropio,async(req,res,next)=>{try{
   const rival=buscarJugador(req.jugador.oponenteId)
-  if(rival)await registrarResultado(req.jugador,rival)
+  const current=combateService.get(req.jugador.dueloId,req.jugador.cuentaId)
+  if(current){if(!['finished','cancelled'].includes(current.match.phase))return res.status(409).json({error:'Termina o abandona el combate primero.'});if(!current.match.result)return res.status(409).json({error:'El resultado se está guardando. Intenta de nuevo.'})}
   req.jugador.estadoJuego="arena";req.jugador.ataques=[]
   if(!rival||rival.oponenteId!==req.jugador.id){req.jugador.oponenteId=null;return res.status(204).end()}
   if(rival.estadoJuego==="arena"){rival.oponenteId=null;rival.ataques=[];req.jugador.oponenteId=null}

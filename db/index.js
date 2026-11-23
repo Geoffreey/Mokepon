@@ -320,3 +320,9 @@ async function finishArcadeRun(id,accountId,reward) {
   }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
 }
 Object.assign(module.exports,{getArcadeProgress,startArcadeRun,getArcadeRun,finishArcadeRun})
+
+async function getCombatEconomy(sourceId,accountId){
+  const row=(await pool.query("SELECT outcome,jade_delta,obsidian_delta,gold_delta FROM combat_economy_events WHERE source_type='pvp' AND source_id=$1 AND account_id=$2",[sourceId,accountId])).rows[0]
+  return row?{outcome:row.outcome,delta:{jade:row.jade_delta,obsidian:row.obsidian_delta,gold:row.gold_delta}}:null
+}
+module.exports.getCombatEconomy=getCombatEconomy

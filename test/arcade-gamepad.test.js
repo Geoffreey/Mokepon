@@ -8,6 +8,8 @@ function pad({index=0,id='Test Controller',mapping='standard',axes=[0,0],buttons
 test('mando estándar: palanca, cruceta y acciones simultáneas',()=>{
   assert.equal(G.decode(pad({axes:[-.8,0],buttons:[0,2,7]})).input,A.INPUT.LEFT|A.INPUT.JUMP|A.INPUT.ATTACK|A.INPUT.SHOOT)
   assert.equal(G.decode(pad({buttons:[15,1]})).input,A.INPUT.RIGHT|A.INPUT.SHOOT)
+  assert.equal(G.decode(pad({buttons:[5]})).input,A.INPUT.BLOCK)
+  assert.equal(G.decode(pad({buttons:[4]})).input,A.INPUT.BLOCK)
   assert.equal(G.decode(pad({buttons:[14,15]})).input,0)
   assert.equal(G.decode(pad({axes:[.2,0]})).input,0)
   assert.equal(G.decode(pad({axes:[NaN,0]})).input,0)

@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id)
-const sections = { registro:$('registro-jugador'), activacion:$('activar-cuenta'), recuperacion:$('recuperar-cuenta'), modos:$('seleccionar-modo'), arcadeNiveles:$('arcade-niveles'), arcadeJuego:$('arcade-juego'), misiones:$('seleccionar-mision'), casino:$('casino-fortuna'), lobby:$('seleccionar-sala'), guardian:$('seleccionar-mascota'), mapa:$('ver-mapa'), batalla:$('seleccionar-ataque') }
+const sections = { registro:$('registro-jugador'), activacion:$('activar-cuenta'), recuperacion:$('recuperar-cuenta'), modos:$('seleccionar-modo'), arcadeNiveles:$('arcade-niveles'), arcadeJuego:$('arcade-juego'), duelo:$('duelo-tiempo-real'), misiones:$('seleccionar-mision'), casino:$('casino-fortuna'), lobby:$('seleccionar-sala'), guardian:$('seleccionar-mascota'), mapa:$('ver-mapa'), batalla:$('seleccionar-ataque') }
 const mapa=$('mapa'), lienzo=mapa.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2)
 const anchoMapa=Math.min(Math.max(window.innerWidth-64,240),800), altoMapa=anchoMapa*0.75
 mapa.width=Math.round(anchoMapa*dpr); mapa.height=Math.round(altoMapa*dpr); lienzo.setTransform(dpr,0,0,dpr,0,0)
@@ -48,13 +48,18 @@ const tacuatzin=new Mokepon('Tacuatzin','./assets/tacuatzin-rugged.png','Fuego �
 batz.premium={victorias:10,puntos:500};tacuatzin.premium={victorias:25,puntos:1200}
 balam.ataques=ataquesFuego;iq.ataques=ataquesAgua;kabrak.ataques=ataquesTierra;cadejo.ataques=ataquesCadejo;tzikin.ataques=ataquesTzikin;sipak.ataques=ataquesSipak;batz.ataques=ataquesBatz;tacuatzin.ataques=ataquesTacuatzin;mokepones=[balam,iq,kabrak,cadejo,tzikin,sipak,batz,tacuatzin]
 
-function mostrarSolo(nombre){document.body.classList.toggle('arcade-active',nombre==='arcadeJuego');Object.values(sections).forEach((s)=>s.hidden=true);if(nombre)sections[nombre].hidden=false}
+function mostrarSolo(nombre){if(nombre!=='duelo'&&typeof detenerDuelo==='function')detenerDuelo();document.body.classList.toggle('arcade-active',nombre==='arcadeJuego'||nombre==='duelo');Object.values(sections).forEach((s)=>s.hidden=true);if(nombre)sections[nombre].hidden=false}
 function cabeceras(json=false){const headers={Authorization:`Bearer ${jugadorToken}`};if(json)headers['Content-Type']='application/json';return headers}
 async function api(url,opciones={}){
-  const res=await fetch(url,opciones)
-  if(res.status===401&&jugadorToken&&!sesionInvalida){sesionInvalida=true;localStorage.removeItem('mokeponAuthToken');await avisarJugador('Tu sesión terminó. Volveremos al inicio.');location.reload();throw new Error('Sesión inválida')}
-  if(!res.ok){let data={};try{data=await res.json()}catch{}const error=new Error(data.error||'No se pudo completar la acción');error.data=data;throw error}
-  return res.status===204?null:res.json()
+  const controller=opciones.signal?null:new AbortController()
+  const timeout=controller?setTimeout(()=>controller.abort(),15000):null
+  try{
+    const res=await fetch(url,{...opciones,signal:opciones.signal||controller.signal})
+    if(res.status===401&&jugadorToken&&!sesionInvalida){sesionInvalida=true;localStorage.removeItem('mokeponAuthToken');await avisarJugador('Tu sesión terminó. Volveremos al inicio.');location.reload();throw new Error('Sesión inválida')}
+    if(!res.ok){let data={};try{data=await res.json()}catch{}const error=new Error(data.error||'No se pudo completar la acción');error.data=data;throw error}
+    return res.status===204?null:await res.json()
+  }catch(error){if(controller?.signal.aborted)throw new Error('La conexión tardó demasiado. Intenta de nuevo.');throw error}
+  finally{if(timeout!==null)clearTimeout(timeout)}
 }
 
 async function iniciarJuego(){
@@ -129,7 +134,7 @@ function renderSalas(salas){
 async function crearSala(id){try{const data=await api(`/salas/${id}/crear`,{method:'POST',headers:cabeceras()});entrarSala(data.sala)}catch(e){$('estado-lobby').textContent=e.message;await obtenerSalas()}}
 async function solicitarSala(id){try{await api(`/salas/${id}/solicitar`,{method:'POST',headers:cabeceras()});$('estado-lobby').textContent='Solicitud enviada. Esperando la aprobación del anfitrión…';await obtenerSalas()}catch(e){$('estado-lobby').textContent=e.message}}
 function entrarSala(sala){
-  salaActual=sala;mapaBackground.src=sala.mapa;$('nombre-sala-actual').textContent=sala.nombre;$('titulo-arena').textContent=sala.nombre;$('rol-sala').textContent=sala.soyCreador?'Anfitrión':'Participante';$('panel-chat').hidden=false;document.querySelector('.map-hint').textContent='Acércate a otro guardián para iniciar un duelo.';$('room-dock').hidden=false;mostrarSolo('guardian');actualizarEstadoSala()
+  salaActual=sala;mapaBackground.src=sala.mapa;$('nombre-sala-actual').textContent=sala.nombre;$('titulo-arena').textContent=sala.nombre;$('rol-sala').textContent=sala.soyCreador?'Anfitrión':'Participante';$('panel-chat').hidden=false;document.querySelector('.map-hint').textContent='Acércate a otro guardián para iniciar un duelo.';$('room-dock').hidden=false;prepararGuardian();void actualizarEstadoSala().catch(error=>avisarJugador(error.message))
 }
 async function salirSala(){if(!salaActual)return;const mensaje=salaActual.soyCreador?'Al salir cerrarás la sala para todos. ¿Continuar?':'¿Salir de esta sala?';if(!await confirmarJugador(mensaje))return;await api(`/salas/${salaActual.id}/salir`,{method:'DELETE',headers:cabeceras()});detenerIntervalosJuego();salaActual=null;$('room-dock').hidden=true;mostrarSolo('lobby');await obtenerSalas()}
 
@@ -162,7 +167,7 @@ async function seleccionarMascotaJugador(){
   const seleccionado=document.querySelector('input[name="mascota"]:checked');if(!seleccionado){avisarJugador('Elige un guardián');return}
   const guardianElegido=mokepones.find((m)=>m.nombre===seleccionado.value);if(!guardianDisponible(guardianElegido)){avisarJugador('Este guardián premium todavía está bloqueado.');renderGuardianes();return}
   mascotaJugador=seleccionado.value;skinJugador=document.querySelector('input[name="skin"]:checked')?.value||'clasico';$('boton-mascota').disabled=true
-  try{if(modoJuego==='arcade'){await iniciarArcade();return}$('mascota-jugador').textContent=mascotaJugador;$('imagen-combate-jugador').src=fotoGuardian(mascotaJugador,skinJugador);$('imagen-combate-jugador').alt=`${mascotaJugador}, skin ${skinJugador}`;$('nombre-combate-jugador').textContent=nombreJugador;mostrarAtaques(obtenerObjetoMascota().ataques);if(modoJuego!=='pvp'){prepararMapaLocal();return}await api(`/mokepon/${encodeURIComponent(jugadorId)}`,{method:'POST',headers:cabeceras(true),body:JSON.stringify({mokepon:mascotaJugador,skin:skinJugador})});mostrarSolo('mapa');iniciarMapa();await actualizarEstadoSala()}catch(e){avisarJugador(e.message);$('boton-mascota').disabled=false}
+  try{if(modoJuego==='arcade'){await iniciarArcade();return}if(modoJuego==='maquina'){await iniciarDueloLocal();return}$('mascota-jugador').textContent=mascotaJugador;$('imagen-combate-jugador').src=fotoGuardian(mascotaJugador,skinJugador);$('imagen-combate-jugador').alt=`${mascotaJugador}, skin ${skinJugador}`;$('nombre-combate-jugador').textContent=nombreJugador;mostrarAtaques(obtenerObjetoMascota().ataques);if(modoJuego!=='pvp'){prepararMapaLocal();return}await api(`/mokepon/${encodeURIComponent(jugadorId)}`,{method:'POST',headers:cabeceras(true),body:JSON.stringify({mokepon:mascotaJugador,skin:skinJugador})});mostrarSolo('mapa');iniciarMapa();await actualizarEstadoSala()}catch(e){avisarJugador(e.message)}finally{$('boton-mascota').disabled=false}
 }
 function mostrarAtaques(ataques){const nombres={FUEGO:'Fuego',AGUA:'Agua',TIERRA:'Tierra'};$('contenedorAtaques').innerHTML=ataques.map((a)=>`<button class="boton-de-ataque BAtaque" data-ataque="${a.tipo}" title="${a.nombre||nombres[a.tipo]}"><span class="attack-icon">${a.icono}</span><span class="attack-name">${a.nombre||nombres[a.tipo]}</span></button>`).join('');botones=[...document.querySelectorAll('.BAtaque')]}
 
@@ -199,16 +204,18 @@ function aleatorio(min,max){return Math.floor(Math.random()*(max-min+1)+min)}
 function revisarColision(enemigo){if(desafioEnCurso)return;const separado=mascotaJugadorObjeto.y+mascotaJugadorObjeto.alto<enemigo.y||mascotaJugadorObjeto.y>enemigo.y+enemigo.alto||mascotaJugadorObjeto.x+mascotaJugadorObjeto.ancho<enemigo.x||mascotaJugadorObjeto.x>enemigo.x+enemigo.ancho;if(!separado)iniciarDesafio(enemigo)}
 async function iniciarDesafio(enemigo){
   desafioEnCurso=true;detenerMovimiento();if(modoJuego!=='pvp'){activarBatallaLocal(enemigo);return}
-  try{await api(`/mokepon/${encodeURIComponent(jugadorId)}/desafio`,{method:'POST',headers:cabeceras(true),body:JSON.stringify({enemigoId:enemigo.id})});activarBatalla({enemigoId:enemigo.id,nombreJugador:enemigo.nombreJugador,guardian:enemigo.nombre,skin:enemigo.skin})}
+  try{const challenge=await api(`/mokepon/${encodeURIComponent(jugadorId)}/desafio`,{method:'POST',headers:cabeceras(true),body:JSON.stringify({enemigoId:enemigo.id})});activarBatalla({enemigoId:enemigo.id,nombreJugador:enemigo.nombreJugador,guardian:enemigo.nombre,skin:enemigo.skin,combateId:challenge.combateId})}
   catch(e){desafioEnCurso=false;mascotaJugadorObjeto.x=Math.max(0,mascotaJugadorObjeto.x-20)}
 }
-function activarBatalla(duelo){
-  if(enemigoId||!duelo?.enemigoId||!duelo.guardian)return
+async function activarBatalla(duelo){
+  if(enemigoId||!duelo?.enemigoId||!duelo.combateId)return
   clearInterval(intervaloMapa);detenerMovimiento();desafioEnCurso=true;enemigoId=duelo.enemigoId
-  $('capitulo-batalla').textContent='Capítulo III · Duelo de sala';$('boton-abandonar-batalla').hidden=true;$('mascota-enemigo').textContent=duelo.guardian;$('imagen-combate-enemigo').src=fotoGuardian(duelo.guardian,duelo.skin);$('nombre-combate-enemigo').textContent=duelo.nombreJugador||'Rival'
-  ataqueJugador=[];ataqueEnemigo=[];mostrarAtaques(obtenerObjetoMascota().ataques);mostrarSolo('batalla');secuenciaAtaque()
+  try{const snapshot=await api(`/combate/${encodeURIComponent(duelo.combateId)}`,{headers:cabeceras()});iniciarDueloVista(snapshot)}catch(error){enemigoId=null;avisarJugador(error.message)}
 }
-function activarBatallaLocal(enemigo=mokeponesEnemigos[0]){clearInterval(intervaloMapa);enemigoId='maquina';batallaLocalId=nuevoUuid();desafioEnCurso=true;$('capitulo-batalla').textContent=modoJuego==='mision'?'Crónica · Misión individual':'Entrenamiento · Contra la máquina';$('mascota-enemigo').textContent=enemigo?.nombre||misionActual?.enemy||'Guardián ancestral';$('imagen-combate-enemigo').src=fotoGuardian(enemigo?.nombre||misionActual?.enemy);$('nombre-combate-enemigo').textContent=modoJuego==='mision'?misionActual.name:'Máquina';$('boton-abandonar-batalla').hidden=false;ataqueJugador=[];ataqueEnemigo=[];victoriasJugador=0;victoriasEnemigo=0;mostrarAtaques(obtenerObjetoMascota().ataques);mostrarSolo('batalla');secuenciaAtaque()}
+async function activarBatallaLocal(){
+  clearInterval(intervaloMapa);detenerMovimiento();desafioEnCurso=true
+  try{await iniciarDueloLocal()}catch(error){desafioEnCurso=false;avisarJugador(error.message);prepararMapaLocal()}
+}
 function secuenciaAtaque(){botones.forEach((boton)=>boton.onclick=()=>{ataqueJugador.push(boton.dataset.ataque);boton.disabled=true;if(ataqueJugador.length===5)enviarAtaques()})}
 async function enviarAtaques(){try{if(modoJuego!=='pvp'){const data=await api('/aventura/combate',{method:'POST',headers:{Authorization:`Bearer ${authToken}`,'Content-Type':'application/json'},body:JSON.stringify({mode:modoJuego==='mision'?'mision':'maquina',missionId:misionActual?.id,clientBattleId:batallaLocalId,guardian:mascotaJugador,enemy:mokeponesEnemigos[0]?.nombre,attacks:ataqueJugador})});ataqueEnemigo=data.enemyAttacks;$('mascota-enemigo').textContent=data.enemy;combate(data);return}await api(`/mokepon/${encodeURIComponent(jugadorId)}/ataques`,{method:'POST',headers:cabeceras(true),body:JSON.stringify({ataques:ataqueJugador})});intervaloAtaques=setInterval(obtenerAtaques,500)}catch(e){avisarJugador(e.message);botones.forEach((boton)=>boton.disabled=false);ataqueJugador=[]}}
 async function obtenerAtaques(){try{const data=await api(`/mokepon/${encodeURIComponent(enemigoId)}/ataques`,{headers:cabeceras()});if(data.ataques.length===5){clearInterval(intervaloAtaques);ataqueEnemigo=data.ataques;combate(data)}}catch(e){console.warn(e.message)}}

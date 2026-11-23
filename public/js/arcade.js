@@ -155,6 +155,7 @@ function dibujarArcade(){
   }
   for(const shot of s.projectiles){c.fillStyle='#fbbf6e';c.shadowColor='#f6b453';c.shadowBlur=18;c.beginPath();c.ellipse(shot.x+16,shot.y+15,19,15,0,0,Math.PI*2);c.fill();c.shadowBlur=0}
   if(p.invincible===0||s.tick%10<6)dibujarPersonaje(fotoGuardian(mascotaJugador,skinJugador),p.x,p.y,p.w,p.h,p.facing,false,t)
+  if(p.blocking)dibujarEscudoArcade(p,t)
   if(p.attack){c.strokeStyle='#f8e4a4';c.lineWidth=6;c.shadowColor='#fff1bf';c.shadowBlur=15;c.beginPath();const x=p.x+p.w/2;c.arc(x,p.y+p.h/2,62,p.facing>0?-.95:Math.PI-.95,p.facing>0?.95:Math.PI+.95);c.stroke();c.shadowBlur=0}
   c.restore()
   if(b.active){
@@ -171,8 +172,8 @@ function dibujarArcade(){
   $('arcade-bolsa').textContent=`Oro ${s.loot.gold} · Jade ${s.loot.jade} · Obsidiana ${s.loot.obsidian}`
   $('arcade-objetivo').textContent=b.active?(s.projectiles.some(shot=>Math.abs(shot.x-p.x)<180)?'¡Salta! Onda de piedra':b.cooldown<=35?'¡Prepárate! Onda de piedra':`⚔ ${level.boss}`):p.x>2450?'⚑ Punto de control cercano':'Encuentra al guardián →'
 }
-function dibujarPersonaje(src,x,y,w,h,facing,hurt,t){
-  const c=arcadeContext,img=arcadeImage(src)
+function dibujarPersonaje(src,x,y,w,h,facing,hurt,t,context=arcadeContext){
+  const c=context,img=arcadeImage(src)
   c.fillStyle='#06171966';c.beginPath();c.ellipse(x+w/2,y+h,w*.45,6,0,0,Math.PI*2);c.fill()
   c.save();c.translate(x+w/2,y+h);c.scale(facing,1)
   if(hurt)c.globalAlpha=.55
@@ -180,7 +181,7 @@ function dibujarPersonaje(src,x,y,w,h,facing,hurt,t){
   else{c.fillStyle='#e2d396';c.fillRect(-w/2,-h,w,h)}
   c.restore()
 }
-const arcadeKeyMap={ArrowLeft:1,KeyA:1,ArrowRight:2,KeyD:2,Space:4,ArrowUp:4,KeyW:4,KeyJ:8,KeyX:8,KeyK:16,KeyZ:16}
+const arcadeKeyMap={ArrowLeft:1,KeyA:1,ArrowRight:2,KeyD:2,Space:4,ArrowUp:4,KeyW:4,KeyJ:8,KeyX:8,KeyK:16,KeyZ:16,KeyL:32,ShiftLeft:32,ShiftRight:32}
 // Track physical keys separately so releasing A does not release a held left arrow.
 const arcadePhysicalKeys=new Set()
 function actualizarTeclasArcade(){arcadeKeys.clear();if(arcadePaused)return;for(const code of arcadePhysicalKeys)if(arcadeKeyMap[code])arcadeKeys.add(arcadeKeyMap[code])}
@@ -205,8 +206,8 @@ $('arcade-continuar').onclick=arcadeResume;$('arcade-reintentar').onclick=reinic
 async function salirArcade(){if(arcadeSaving)return;detenerArcade();await abrirArcade()}
 $('arcade-salir').onclick=salirArcade;$('arcade-mapa').onclick=salirArcade
 
-function dibujarPoderArcade(shot,power,t){
-  const c=arcadeContext,dir=Math.sign(shot.vx),x=shot.x+shot.w/2,y=shot.y+shot.h/2
+function dibujarPoderArcade(shot,power,t,context=arcadeContext){
+  const c=context,dir=Math.sign(shot.vx),x=shot.x+shot.w/2,y=shot.y+shot.h/2
   c.save();c.translate(x,y);c.scale(dir,1)
   c.shadowBlur=18;c.shadowColor=power.color
   for(let i=4;i>0;i--){c.globalAlpha=(5-i)*.13;c.fillStyle=power.color;c.beginPath();c.ellipse(-i*9,Math.sin(t*15-i)*2,13-i,6-i*.6,0,0,Math.PI*2);c.fill()}
@@ -332,4 +333,10 @@ for(const type of ['touchstart','touchmove','touchend','gesturestart','gesturech
   document.addEventListener(type,event=>{
     if(event.target.closest?.('.arcade-controls,.map-controls')&&event.cancelable)event.preventDefault()
   },{passive:false})
+}
+
+function dibujarEscudoArcade(player,time,context=arcadeContext){
+  const c=context,x=player.x+player.w/2,y=player.y+player.h/2
+  c.save();c.strokeStyle='#a7eee4';c.fillStyle='#8be8da24';c.lineWidth=4;c.shadowColor='#79f0e1';c.shadowBlur=12
+  c.beginPath();c.ellipse(x+player.facing*14,y,player.w*.7,player.h*.66,0,0,Math.PI*2);c.fill();c.stroke();c.restore()
 }

@@ -25,6 +25,7 @@
     if(pressed(pad,0))input|=4
     if(pressed(pad,2))input|=8
     if(pressed(pad,1)||pressed(pad,7))input|=16
+    if(pressed(pad,4)||pressed(pad,5))input|=32
     const scrollX=scrollValue(axis(pad,2)),scrollY=scrollValue(axis(pad,3))
     return {input,pause:pressed(pad,9),confirm:pressed(pad,0),back:pressed(pad,1),menu:nav==='up'?-1:nav==='down'?1:0,direction:nav,scroll:Math.sign(scrollY),scrollX,scrollY}
   }
@@ -39,7 +40,7 @@
         const key=pad?`${pad.index}:${pad.id}`:null,changed=key!==selected,disconnected=selected!==null&&changed
         if(changed){selected=key;previous={pause:false,confirm:false,menu:0,back:false,direction:null};blocked=true;actionsBlocked=true}
         const value=decode(pad,previous.direction)
-        if(blocked&&!(value.input&28)&&!value.pause)blocked=false
+        if(blocked&&!(value.input&60)&&!value.pause)blocked=false
         if(actionsBlocked&&!value.confirm&&!value.pause&&!value.back)actionsBlocked=false
         const state={connected:Boolean(pad),supported:supported(pad),id:pad?.id||'',index:pad?.index??null,changed,disconnected,
           input:blocked?value.input&3:value.input,pausePressed:!actionsBlocked&&value.pause&&!previous.pause,confirmPressed:!actionsBlocked&&value.confirm&&!previous.confirm,
