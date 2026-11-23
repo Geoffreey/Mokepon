@@ -1,12 +1,12 @@
 const $ = (id) => document.getElementById(id)
-const sections = { registro:$('registro-jugador'), activacion:$('activar-cuenta'), recuperacion:$('recuperar-cuenta'), modos:$('seleccionar-modo'), arcadeNiveles:$('arcade-niveles'), arcadeJuego:$('arcade-juego'), duelo:$('duelo-tiempo-real'), misiones:$('seleccionar-mision'), casino:$('casino-fortuna'), lobby:$('seleccionar-sala'), guardian:$('seleccionar-mascota'), mapa:$('ver-mapa'), batalla:$('seleccionar-ataque') }
+const sections = { recompensas:$('recompensas-guardianes'), registro:$('registro-jugador'), activacion:$('activar-cuenta'), recuperacion:$('recuperar-cuenta'), modos:$('seleccionar-modo'), arcadeNiveles:$('arcade-niveles'), arcadeJuego:$('arcade-juego'), duelo:$('duelo-tiempo-real'), misiones:$('seleccionar-mision'), casino:$('casino-fortuna'), lobby:$('seleccionar-sala'), guardian:$('seleccionar-mascota'), mapa:$('ver-mapa'), batalla:$('seleccionar-ataque') }
 const mapa=$('mapa'), lienzo=mapa.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2)
 const anchoMapa=Math.min(Math.max(window.innerWidth-64,240),800), altoMapa=anchoMapa*0.75
 mapa.width=Math.round(anchoMapa*dpr); mapa.height=Math.round(altoMapa*dpr); lienzo.setTransform(dpr,0,0,dpr,0,0)
 const mapaBackground=new Image()
 
 let jugadorId=null, jugadorToken=null, authToken=localStorage.getItem('mokeponAuthToken'), nombreJugador='', salaActual=null, enemigoId=null, modoAuth='login'
-let captchaWidgetId=null,captchaRecuperacionId=null,captchaActivo=false,captchaSiteKey='',usuarioPendiente='',reenvioToken=''
+let captchaCargando=true,captchaWidgetId=null,captchaRecuperacionId=null,captchaActivo=false,captchaSiteKey='',usuarioPendiente='',reenvioToken=''
 let mokepones=[], mokeponesEnemigos=[], mascotaJugador='', mascotaJugadorObjeto=null
 let ataqueJugador=[], ataqueEnemigo=[], botones=[], indexAtaqueJugador='', indexAtaqueEnemigo=''
 let victoriasJugador=0, victoriasEnemigo=0, intervaloMapa=null, intervaloSala=null, intervaloAtaques=null
@@ -50,13 +50,41 @@ balam.ataques=ataquesFuego;iq.ataques=ataquesAgua;kabrak.ataques=ataquesTierra;c
 
 function mostrarSolo(nombre){if(nombre!=='duelo'&&typeof detenerDuelo==='function')detenerDuelo();document.body.classList.toggle('arcade-active',nombre==='arcadeJuego'||nombre==='duelo');Object.values(sections).forEach((s)=>s.hidden=true);if(nombre)sections[nombre].hidden=false}
 function cabeceras(json=false){const headers={Authorization:`Bearer ${jugadorToken}`};if(json)headers['Content-Type']='application/json';return headers}
+let recuperacionJugador=null
+async function recuperarSesionJugador(tokenFallido){
+  if(jugadorToken&&jugadorToken!==tokenFallido)return
+  if(recuperacionJugador)return recuperacionJugador
+  const cuentaToken=authToken
+  if(!cuentaToken)throw Object.assign(new Error('Inicia sesión nuevamente.'),{status:401})
+  recuperacionJugador=(async()=>{
+    const res=await fetch('/unirse',{method:'POST',headers:{Authorization:`Bearer ${cuentaToken}`,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(10000)})
+    if(!res.ok)throw Object.assign(new Error(res.status===401?'Inicia sesión nuevamente.':'No se pudo reconectar. Intenta otra vez.'),{status:res.status})
+    const data=await res.json()
+    if(authToken!==cuentaToken)throw new Error('La cuenta cambió durante la reconexión.')
+    const anterior=jugadorId;jugadorId=data.id;jugadorToken=data.token
+    if(anterior!==jugadorId&&salaActual){detenerIntervalosJuego();salaActual=null;$('room-dock').hidden=true;if(modoJuego==='pvp'){mostrarSolo('lobby');$('estado-lobby').textContent='La conexión se restableció. Elige una sala para continuar.'}}
+  })().finally(()=>{recuperacionJugador=null})
+  return recuperacionJugador
+}
+async function finalizarSesionVencida(){
+  if(sesionInvalida)return
+  sesionInvalida=true;localStorage.removeItem('mokeponAuthToken');authToken=null;jugadorToken=null
+  await avisarJugador('Tu acceso a la cuenta venció o fue revocado. Inicia sesión nuevamente.');location.reload()
+}
 async function api(url,opciones={}){
   const controller=opciones.signal?null:new AbortController()
   const timeout=controller?setTimeout(()=>controller.abort(),15000):null
   try{
-    const res=await fetch(url,{...opciones,signal:opciones.signal||controller.signal})
-    if(res.status===401&&jugadorToken&&!sesionInvalida){sesionInvalida=true;localStorage.removeItem('mokeponAuthToken');await avisarJugador('Tu sesión terminó. Volveremos al inicio.');location.reload();throw new Error('Sesión inválida')}
-    if(!res.ok){let data={};try{data=await res.json()}catch{}const error=new Error(data.error||'No se pudo completar la acción');error.data=data;throw error}
+    const authorization=opciones.headers?.Authorization,tokenEnviado=authorization?.startsWith('Bearer ')?authorization.slice(7):null
+    const eraJugador=Boolean(tokenEnviado&&tokenEnviado===jugadorToken),idEnviado=eraJugador?jugadorId:null
+    let res=await fetch(url,{...opciones,signal:opciones.signal||controller.signal})
+    if(res.status===401&&eraJugador&&authToken){
+      try{await recuperarSesionJugador(tokenEnviado)}catch(error){if(error.status===401)await finalizarSesionVencida();throw error}
+      const destino=typeof url==='string'&&idEnviado?url.replace(`/mokepon/${encodeURIComponent(idEnviado)}`,`/mokepon/${encodeURIComponent(jugadorId)}`):url
+      res=await fetch(destino,{...opciones,headers:{...opciones.headers,Authorization:`Bearer ${jugadorToken}`},signal:opciones.signal||controller.signal})
+    }else if(res.status===401&&tokenEnviado&&tokenEnviado===authToken){await finalizarSesionVencida();throw new Error('Sesión inválida')}
+
+    if(!res.ok){let data={};try{data=await res.json()}catch{}const error=new Error(data.error||'No se pudo completar la acción');error.data=data;error.status=res.status;throw error}
     return res.status===204?null:await res.json()
   }catch(error){if(controller?.signal.aborted)throw new Error('La conexión tardó demasiado. Intenta de nuevo.');throw error}
   finally{if(timeout!==null)clearTimeout(timeout)}
@@ -67,20 +95,20 @@ async function iniciarJuego(){
   $('form-nombre').addEventListener('submit',registrarJugador);$('boton-mascota').addEventListener('click',seleccionarMascotaJugador)
   $('boton-reiniciar').addEventListener('click',volverArena);$('boton-abandonar-batalla').addEventListener('click',abandonarBatallaLocal);$('boton-salir-sala').addEventListener('click',salirSala);$('form-chat').addEventListener('submit',enviarChat)
   $('tab-login').onclick=()=>cambiarModoAuth('login');$('tab-registro').onclick=()=>cambiarModoAuth('registro');$('boton-cerrar-sesion').onclick=cerrarSesion;$('boton-olvide-clave').onclick=mostrarRecuperacion;$('boton-volver-login').onclick=()=>{mostrarSolo('registro');reiniciarCaptcha()};$('form-recuperacion').onsubmit=solicitarRestablecimiento
-  $('form-activacion').addEventListener('submit',activarCuenta);$('boton-reenviar').onclick=reenviarCodigo;await configurarCaptcha()
+  $('abrir-recompensas-guardian').onclick=()=>abrirRecompensas(true);$('recompensas-volver').onclick=()=>{if(recompensasDesdeGuardian){$('room-dock').hidden=!(salaActual&&modoJuego==='pvp');prepararGuardian()}else mostrarModos()};$('form-activacion').addEventListener('submit',activarCuenta);$('boton-reenviar').onclick=reenviarCodigo;void configurarCaptcha()
   document.querySelectorAll('[data-mode]').forEach((boton)=>boton.onclick=()=>seleccionarModo(boton.dataset.mode));$('volver-modos-lobby').onclick=mostrarModos;$('volver-modos-misiones').onclick=mostrarModos;$('volver-modos-casino').onclick=mostrarModos;$('volver-modos-guardian').onclick=volverDesdeGuardian;$('form-casino').onsubmit=jugarCasino;$('casino-moneda').onchange=actualizarLimiteCasino;$('form-sol-luna').onsubmit=jugarSolLuna;$('moneda-recurso').onchange=actualizarLimiteMoneda;$('form-rueda').onsubmit=jugarRueda;$('rueda-recurso').onchange=actualizarLimiteRueda;$('form-cartas').onsubmit=jugarCartas;$('cartas-recurso').onchange=actualizarLimiteCartas;document.querySelectorAll('[data-casino-game]').forEach((b)=>b.onclick=()=>mostrarJuegoCasino(b.dataset.casinoGame,b))
-  if(authToken){try{const perfil=await api('/auth/perfil',{headers:{Authorization:`Bearer ${authToken}`}});await iniciarJugador(perfil)}catch{localStorage.removeItem('mokeponAuthToken');authToken=null}}
+  if(authToken){try{const perfil=await api('/auth/perfil',{headers:{Authorization:`Bearer ${authToken}`}});await iniciarJugador(perfil)}catch(error){if(error.status===401){localStorage.removeItem('mokeponAuthToken');authToken=null}else $('error-registro').textContent='No se pudo recuperar la conexión. Tu sesión está guardada; vuelve a intentar.'}}
 }
 
 async function registrarJugador(event){
-  event.preventDefault();const boton=$('boton-auth');boton.disabled=true;$('error-registro').textContent=''
+  event.preventDefault();if(captchaCargando){$('error-registro').textContent='La verificación se está preparando. Intenta en unos segundos.';return}if(captchaActivo&&!obtenerCaptcha()){$('error-registro').textContent='Completa la verificación reCAPTCHA antes de continuar.';return}const boton=$('boton-auth');boton.disabled=true;$('error-registro').textContent=''
   const body={usuario:$('usuario').value.trim(),clave:$('clave').value,captchaToken:obtenerCaptcha()};if(modoAuth==='registro'){body.nombre=$('nombre-jugador').value.trim();body.correo=$('correo').value.trim()}
   try{const data=await api(`/auth/${modoAuth}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(data.requiereActivacion){mostrarActivacion(body.usuario,data.correoEnmascarado,data.reenvioToken);return}authToken=data.token;localStorage.setItem('mokeponAuthToken',authToken);await iniciarJugador(data)}
   catch(error){if(error.data?.requiereActivacion)mostrarActivacion(body.usuario,null,error.data.reenvioToken);else $('error-registro').textContent=error.message;boton.disabled=false;reiniciarCaptcha()}
 }
-function cambiarModoAuth(modo){modoAuth=modo;const registro=modo==='registro';$('campos-registro').hidden=!registro;$('nombre-jugador').required=registro;$('correo').required=registro;$('boton-olvide-clave').hidden=registro;$('clave').autocomplete=registro?'new-password':'current-password';$('tab-login').classList.toggle('active',!registro);$('tab-registro').classList.toggle('active',registro);$('boton-auth').firstChild.textContent=registro?'Crear cuenta ':'Entrar al mundo ';$('error-registro').textContent='';reiniciarCaptcha()}
-async function configurarCaptcha(){try{const config=await api('/auth/config');captchaActivo=config.captchaActivo;captchaSiteKey=config.recaptchaSiteKey;if(!captchaActivo){$('captcha-aviso').textContent=config.modoDesarrollo?'reCAPTCHA en modo local: configura las claves para probar la protección real.':'reCAPTCHA no está disponible.';$('captcha-aviso-recuperacion').textContent=$('captcha-aviso').textContent;return}$('captcha-aviso').textContent='Cargando verificación…';window.onRecaptchaReady=()=>{try{captchaWidgetId=window.grecaptcha.render('captcha-container',{sitekey:captchaSiteKey,theme:'dark'});$('captcha-aviso').textContent=''}catch{$('captcha-aviso').textContent='No se pudo mostrar reCAPTCHA. Recarga la página o desactiva el bloqueador para este sitio.'}};const script=document.createElement('script');script.src='https://www.google.com/recaptcha/api.js?onload=onRecaptchaReady&render=explicit&hl=es-419';script.async=true;script.defer=true;script.onerror=()=>{$('captcha-aviso').textContent='Google reCAPTCHA fue bloqueado. Desactiva el bloqueador para este sitio y recarga.'};document.head.appendChild(script)}catch{$('captcha-aviso').textContent='No se pudo cargar reCAPTCHA.'}}
-function obtenerCaptcha(){return captchaActivo&&window.grecaptcha&&captchaWidgetId!==null?window.grecaptcha.getResponse(captchaWidgetId):'desarrollo-local'}
+function cambiarModoAuth(modo){modoAuth=modo;const registro=modo==='registro';$('campos-registro').hidden=!registro;$('nombre-jugador').required=registro;$('correo').required=registro;$('boton-olvide-clave').hidden=registro;$('clave').autocomplete=registro?'new-password':'current-password';$('tab-login').classList.toggle('active',!registro);$('tab-registro').classList.toggle('active',registro);$('boton-auth').firstChild.textContent=registro?'Crear cuenta ':'Entrar al mundo ';$('error-registro').textContent=''}
+async function configurarCaptcha(){try{const config=await api('/auth/config');captchaActivo=config.captchaActivo;captchaSiteKey=config.recaptchaSiteKey;captchaCargando=false;if(!captchaActivo){$('captcha-aviso').textContent=config.modoDesarrollo?'reCAPTCHA en modo local: configura las claves para probar la protección real.':'reCAPTCHA no está disponible.';$('captcha-aviso-recuperacion').textContent=$('captcha-aviso').textContent;return}$('captcha-aviso').textContent='Cargando verificación…';window.onRecaptchaReady=()=>{try{captchaWidgetId=window.grecaptcha.render('captcha-container',{sitekey:captchaSiteKey,theme:'dark'});$('captcha-aviso').textContent=''}catch{$('captcha-aviso').textContent='No se pudo mostrar reCAPTCHA. Recarga la página o desactiva el bloqueador para este sitio.'}};const script=document.createElement('script');script.src='https://www.google.com/recaptcha/api.js?onload=onRecaptchaReady&render=explicit&hl=es-419';script.async=true;script.defer=true;script.onerror=()=>{$('captcha-aviso').textContent='Google reCAPTCHA fue bloqueado. Desactiva el bloqueador para este sitio y recarga.'};document.head.appendChild(script)}catch{$('captcha-aviso').textContent='No se pudo cargar reCAPTCHA.'}}
+function obtenerCaptcha(){return captchaActivo&&window.grecaptcha&&captchaWidgetId!==null?window.grecaptcha.getResponse(captchaWidgetId):captchaActivo?'':'desarrollo-local'}
 function reiniciarCaptcha(){if(captchaActivo&&window.grecaptcha&&captchaWidgetId!==null)window.grecaptcha.reset(captchaWidgetId)}
 function mostrarRecuperacion(){mostrarSolo('recuperacion');$('mensaje-recuperacion').textContent='';$('error-recuperacion').textContent='';if(captchaActivo&&window.grecaptcha&&captchaRecuperacionId===null){captchaRecuperacionId=window.grecaptcha.render('captcha-recuperacion',{sitekey:captchaSiteKey,theme:'dark'});$('captcha-aviso-recuperacion').textContent=''}}
 async function solicitarRestablecimiento(event){event.preventDefault();const formulario=event.currentTarget,boton=formulario.querySelector('.primary-button');boton.disabled=true;$('error-recuperacion').textContent='';$('mensaje-recuperacion').textContent='';const captchaToken=captchaActivo&&window.grecaptcha&&captchaRecuperacionId!==null?window.grecaptcha.getResponse(captchaRecuperacionId):'desarrollo-local';try{const data=await api('/auth/solicitar-restablecimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({correo:$('correo-recuperacion').value.trim(),captchaToken})});$('mensaje-recuperacion').textContent=data.mensaje;formulario.reset()}catch(error){$('error-recuperacion').textContent=error.message}finally{boton.disabled=false;if(captchaActivo&&window.grecaptcha&&captchaRecuperacionId!==null)window.grecaptcha.reset(captchaRecuperacionId)}}
@@ -90,11 +118,11 @@ async function reenviarCodigo(){const boton=$('boton-reenviar');boton.disabled=t
 async function iniciarJugador(perfil){const data=await api('/unirse',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${authToken}`},body:'{}'});jugadorId=data.id;jugadorToken=data.token;nombreJugador=data.nombre;$('jugador-badge').textContent=`● ${nombreJugador}`;$('jugador-badge').hidden=false;$('boton-cerrar-sesion').hidden=false;renderPerfil(perfil.estadisticas||data.estadisticas);$('modo-nivel').textContent=`Nivel ${perfil.estadisticas?.nivel||data.estadisticas?.nivel||1}`;await cargarProgreso();mostrarModos()}
 function renderPerfil(stats){if(!stats)return;estadisticasJugador=stats;$('perfil-nivel').textContent=`Nivel ${stats.nivel}`;$('perfil-puntos').textContent=stats.puntos;$('perfil-batallas').textContent=stats.batallas;$('perfil-victorias').textContent=stats.victorias;const log=$('perfil-historial');log.innerHTML=stats.historial.length?stats.historial.slice(0,4).map((b)=>`<span class="battle-entry ${b.resultado==='victoria'?'win':b.resultado==='derrota'?'loss':''}">${b.resultado} · ${b.oponente}</span>`).join(''):'<span class="battle-entry">Aún no hay batallas</span>'}
 async function actualizarPerfil(){if(!authToken)return;try{const perfil=await api('/auth/perfil',{headers:{Authorization:`Bearer ${authToken}`}});renderPerfil(perfil.estadisticas)}catch{}}
-async function cerrarSesion(){try{await api('/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${authToken}`}})}catch{}localStorage.removeItem('mokeponAuthToken');location.reload()}
+function cerrarSesion(){const token=authToken;$('boton-cerrar-sesion').disabled=true;$('boton-cerrar-sesion').textContent='Cerrando sesión…';localStorage.removeItem('mokeponAuthToken');authToken=null;jugadorToken=null;detenerIntervalosJuego();clearInterval(intervaloSala);if(typeof detenerDuelo==='function')detenerDuelo();if(typeof detenerArcade==='function')detenerArcade();if(token)void fetch('/auth/logout',{method:'POST',headers:{Authorization:`Bearer ${token}`},keepalive:true}).catch(()=>{});location.reload()}
 
 async function cargarProgreso(){progresoAventura=await api('/aventura/progreso',{headers:{Authorization:`Bearer ${authToken}`}});$('cartera-jade').textContent=progresoAventura.wallet.jade;$('cartera-obsidiana').textContent=progresoAventura.wallet.obsidian;$('cartera-oro').textContent=progresoAventura.wallet.gold}
 function mostrarModos(){detenerIntervalosJuego();clearInterval(intervaloSala);modoJuego='pvp';misionActual=null;$('room-dock').hidden=true;mostrarSolo('modos')}
-async function seleccionarModo(modo){modoJuego=modo;if(modo==='pvp'){mostrarSolo('lobby');await obtenerSalas();clearInterval(intervaloSala);intervaloSala=setInterval(actualizarMultijugador,1500);return}if(modo==='misiones'){await cargarProgreso();renderMisiones();mostrarSolo('misiones');return}if(modo==='arcade'){await abrirArcade();return}if(modo==='casino'){await abrirCasino();return}prepararGuardian()}
+async function seleccionarModo(modo){modoJuego=modo;if(modo==='recompensas'){await abrirRecompensas();return}if(modo==='pvp'){mostrarSolo('lobby');await obtenerSalas();clearInterval(intervaloSala);intervaloSala=setInterval(actualizarMultijugador,1500);return}if(modo==='misiones'){await cargarProgreso();renderMisiones();mostrarSolo('misiones');return}if(modo==='arcade'){await abrirArcade();return}if(modo==='casino'){await abrirCasino();return}prepararGuardian()}
 
 const nombresMoneda={jade:'jade',obsidian:'obsidiana',gold:'oro'}
 async function abrirCasino(){mostrarSolo('casino');$('casino-resultado').textContent='Elige tu augurio y coloca una apuesta.';try{const data=await api('/casino',{headers:{Authorization:`Bearer ${authToken}`}});progresoAventura={...(progresoAventura||{}),wallet:data.wallet};renderCasino(data)}catch(error){$('casino-resultado').textContent=error.message}}
@@ -158,7 +186,32 @@ function renderChat(mensajes){
 async function enviarChat(event){event.preventDefault();const input=$('mensaje-chat'),texto=input.value.trim();if(!texto||!salaActual)return;input.value='';try{await api(`/salas/${salaActual.id}/chat`,{method:'POST',headers:cabeceras(true),body:JSON.stringify({texto})});await actualizarEstadoSala()}catch(e){avisarJugador(e.message)}}
 
 function renderGuardianes(){
-  const contenedor=$('contenedorTarjetas');contenedor.innerHTML='';$('selector-skins').hidden=true;mokepones.forEach((m)=>{const desbloqueado=guardianDisponible(m),victorias=Math.min(estadisticasJugador?.victorias||0,m.premium?.victorias||0),puntos=Math.min(estadisticasJugador?.puntos||0,m.premium?.puntos||0),premium=m.premium?`<span class="premium-badge">${desbloqueado?'✦ Premium desbloqueado':'◆ Premium bloqueado'}</span><span class="premium-progress">${victorias}/${m.premium.victorias} victorias · ${puntos}/${m.premium.puntos} puntos</span>`:'';contenedor.insertAdjacentHTML('beforeend',`<input type="radio" name="mascota" id="${m.nombre}" value="${m.nombre}" ${desbloqueado?'':'disabled'}><label class="tarjeta-de-mokepon ${m.premium?'premium-card':''} ${desbloqueado?'':'locked'}" for="${m.nombre}" aria-disabled="${!desbloqueado}"><img src="${m.foto}" alt="Guardián ${m.nombre}"><span class="card-copy">${premium}<span class="card-element">${m.elemento}</span><span class="card-name">${m.nombre}</span><span class="card-lore">${m.leyenda}</span></span></label>`)});document.querySelectorAll('input[name="mascota"]:not(:disabled)').forEach((input)=>input.addEventListener('change',()=>renderSkins(input.value)))
+  const contenedor=$('contenedorTarjetas');contenedor.innerHTML='';$('selector-skins').hidden=true;mokepones.forEach((m)=>{const desbloqueado=guardianDisponible(m),victorias=Math.min(estadisticasJugador?.victorias||0,m.premium?.victorias||0),puntos=Math.min(estadisticasJugador?.puntos||0,m.premium?.puntos||0),premium=m.premium?`<span class="premium-badge">${desbloqueado?'✦ Premium desbloqueado':'◆ Premium bloqueado'}</span><span class="premium-progress">${desbloqueado?(progresoAventura?.admin?'Acceso de administrador':'Disponible en todos los modos'):`${victorias}/${m.premium.victorias} victorias · ${puntos}/${m.premium.puntos} puntos`}</span>`:'';contenedor.insertAdjacentHTML('beforeend',`<input type="radio" name="mascota" id="${m.nombre}" value="${m.nombre}" ${desbloqueado?'':'disabled'}><label class="tarjeta-de-mokepon ${m.premium?'premium-card':''} ${desbloqueado?'':'locked'}" for="${m.nombre}" aria-disabled="${!desbloqueado}"><img src="${m.foto}" alt="Guardián ${m.nombre}"><span class="card-copy">${premium}<span class="card-element">${m.elemento}</span><span class="card-name">${m.nombre}</span><span class="card-lore">${m.leyenda}</span></span></label>`)});document.querySelectorAll('input[name="mascota"]:not(:disabled)').forEach((input)=>input.addEventListener('change',()=>renderSkins(input.value)))
+}
+let recompensasDesdeGuardian=false
+async function abrirRecompensas(desdeGuardian=false){
+ recompensasDesdeGuardian=desdeGuardian;$('room-dock').hidden=true;mostrarSolo('recompensas');$('recompensas-estado').textContent='Cargando desafíos…'
+ try{await cargarProgreso();renderRecompensas();$('recompensas-estado').textContent=''}catch(error){$('recompensas-estado').textContent=error.message}
+}
+function renderRecompensas(){
+ $('recompensas-cartera').textContent=`Tu oro: ${progresoAventura.wallet.gold}${progresoAventura.admin?' · Acceso completo de administrador':''}`
+ const list=$('recompensas-lista');list.innerHTML=''
+ for(const guardian of progresoAventura.guardianesPremium){
+  const card=document.createElement('article');card.className='guardian-reward-card'
+  const model=mokepones.find(m=>m.nombre===guardian.nombre)
+  const title=document.createElement('h2');title.textContent=guardian.nombre
+  const image=document.createElement('img');image.src=model.foto;image.alt=guardian.nombre
+  const status=document.createElement('strong');status.textContent=guardian.desbloqueado?'✓ Disponible en todos los modos':'Elige una de estas alternativas'
+  const challenge=document.createElement('p');challenge.textContent=`${guardian.challenge} · ${guardian.challengeProgress}/${guardian.challengeTotal}`
+  const stats=document.createElement('p');stats.textContent=`O alcanza ${guardian.victorias} victorias y ${guardian.puntos} puntos. Llevas ${estadisticasJugador?.victorias||0} victorias y ${estadisticasJugador?.puntos||0} puntos.`
+  const button=document.createElement('button');button.className='primary-button';button.textContent=guardian.desbloqueado?'Guardián desbloqueado':`Canjear por ${guardian.gold} oro`;button.disabled=guardian.desbloqueado||progresoAventura.wallet.gold<guardian.gold
+  button.onclick=async()=>{
+   if(!await confirmarJugador(`¿Canjear ${guardian.gold} de tu oro por ${guardian.nombre}? El desbloqueo es permanente.`))return
+   button.disabled=true
+   try{const result=await api('/aventura/guardianes/canjear',{method:'POST',headers:{Authorization:`Bearer ${authToken}`,'Content-Type':'application/json'},body:JSON.stringify({guardian:guardian.nombre})});await cargarProgreso();renderRecompensas();$('recompensas-estado').textContent=result.alreadyUnlocked?'Este guardián ya estaba disponible; no gastaste oro.':`${guardian.nombre} desbloqueado. Se descontaron ${result.spent} de oro.`}catch(error){$('recompensas-estado').textContent=error.message;button.disabled=false}
+  }
+  card.append(image,title,status,challenge,stats,button);list.append(card)
+ }
 }
 function guardianDisponible(mokepon){if(!mokepon.premium)return true;const estado=progresoAventura?.guardianesPremium?.find((item)=>item.nombre===mokepon.nombre);if(estado)return estado.desbloqueado;return Boolean(estadisticasJugador&&estadisticasJugador.victorias>=mokepon.premium.victorias&&estadisticasJugador.puntos>=mokepon.premium.puntos)}
 function fotoGuardian(nombre,skin='clasico'){if(nombre==="B'alam"&&skin==='balam-nocturno')return './assets/balam-nocturno-rugged.png';return mokepones.find((m)=>m.nombre===nombre)?.foto||'./assets/balam-rugged.png'}
@@ -205,7 +258,7 @@ function revisarColision(enemigo){if(desafioEnCurso)return;const separado=mascot
 async function iniciarDesafio(enemigo){
   desafioEnCurso=true;detenerMovimiento();if(modoJuego!=='pvp'){activarBatallaLocal(enemigo);return}
   try{const challenge=await api(`/mokepon/${encodeURIComponent(jugadorId)}/desafio`,{method:'POST',headers:cabeceras(true),body:JSON.stringify({enemigoId:enemigo.id})});activarBatalla({enemigoId:enemigo.id,nombreJugador:enemigo.nombreJugador,guardian:enemigo.nombre,skin:enemigo.skin,combateId:challenge.combateId})}
-  catch(e){desafioEnCurso=false;mascotaJugadorObjeto.x=Math.max(0,mascotaJugadorObjeto.x-20)}
+  catch(e){desafioEnCurso=false;if(mascotaJugadorObjeto)mascotaJugadorObjeto.x=Math.max(0,mascotaJugadorObjeto.x-20)}
 }
 async function activarBatalla(duelo){
   if(enemigoId||!duelo?.enemigoId||!duelo.combateId)return

@@ -101,7 +101,7 @@
     }
     function back(root){
       if(modal){closeModal();return}
-      const ids=['arcade-mapa','volver-modos-guardian','volver-modos-lobby','volver-modos-misiones','volver-modos-casino','arcade-volver','boton-volver-login','boton-abandonar-batalla','arcade-salir','boton-salir-sala','duel-exit']
+      const ids=['recompensas-volver','arcade-mapa','volver-modos-guardian','volver-modos-lobby','volver-modos-misiones','volver-modos-casino','arcade-volver','boton-volver-login','boton-abandonar-batalla','arcade-salir','boton-salir-sala','duel-exit']
       const el=ids.map(id=>doc.getElementById(id)).find(el=>el&&(root.contains(el)||el.id==='boton-salir-sala')&&visible(el))
       if(el)el.click()
     }

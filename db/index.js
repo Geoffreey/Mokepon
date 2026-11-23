@@ -326,3 +326,25 @@ async function getCombatEconomy(sourceId,accountId){
   return row?{outcome:row.outcome,delta:{jade:row.jade_delta,obsidian:row.obsidian_delta,gold:row.gold_delta}}:null
 }
 module.exports.getCombatEconomy=getCombatEconomy
+
+// The wallet lock serializes duplicate redemption requests; prices come from server rules.
+async function redeemGuardian(accountId,nombre){
+  const policy=require('../server/guardian-access'),rule=policy.RULES.find(r=>r.nombre===nombre)
+  if(!rule)throw Object.assign(new Error('Guardián inválido.'),{status:400})
+  const client=await pool.connect()
+  try{
+    await client.query('BEGIN')
+    await client.query('INSERT INTO player_wallets (account_id) VALUES ($1) ON CONFLICT DO NOTHING',[accountId])
+    const wallet=(await client.query('SELECT gold FROM player_wallets WHERE account_id=$1 FOR UPDATE',[accountId])).rows[0]
+    const account=(await client.query('SELECT role,wins_count,points FROM accounts WHERE id=$1',[accountId])).rows[0]
+    const missions=(await client.query('SELECT mission_id FROM mission_progress WHERE account_id=$1',[accountId])).rows.map(r=>r.mission_id)
+    const levels=(await client.query('SELECT level_id FROM arcade_progress WHERE account_id=$1',[accountId])).rows.map(r=>r.level_id)
+    const unlocks=(await client.query('SELECT unlock_type,unlock_id FROM player_unlocks WHERE account_id=$1',[accountId])).rows.map(r=>({type:r.unlock_type,id:r.unlock_id}))
+    if(policy.unlocked(nombre,{victorias:account.wins_count,puntos:account.points},{completedMissions:missions,arcadeCompleted:levels,unlocks},{rol:account.role})){await client.query('COMMIT');return {alreadyUnlocked:true,spent:0}}
+    if(wallet.gold<rule.gold)throw Object.assign(new Error('No tienes suficiente oro para este canje.'),{status:409})
+    await client.query('UPDATE player_wallets SET gold=gold-$2,updated_at=now() WHERE account_id=$1',[accountId,rule.gold])
+    await client.query("INSERT INTO player_unlocks (account_id,unlock_type,unlock_id) VALUES ($1,'mascota',$2)",[accountId,nombre])
+    await client.query('COMMIT');return {alreadyUnlocked:false,spent:rule.gold}
+  }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
+}
+module.exports.redeemGuardian=redeemGuardian

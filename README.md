@@ -288,3 +288,38 @@ vistas vertical y horizontal conservan áreas seguras, controles táctiles y
 protección contra zoom accidental. Verificación: `docker exec mokepon npm test`
 y revisión visual en 390×844, 844×390 y 1280×720. La emulación de mando no
 sustituye una prueba física en iPhone con DualSense.
+
+## Guardianes: desafíos, oro y administrador
+
+“Desafíos y guardianes” muestra las alternativas de desbloqueo. B’atz conserva
+10 victorias y 500 puntos como requisito original; también se obtiene al
+completar `eco-selva` y `fuego-ancestral`, o canjeando 500 de oro. Tacuatzin
+conserva 25 victorias y 1200 puntos; también se obtiene al superar las tres
+pantallas de Arcade, o canjeando 1200 de oro. Basta una alternativa. El progreso
+existente se reconoce automáticamente y no se reinicia.
+
+`server/guardian-access.js` contiene las reglas. El precio viene del servidor,
+no del navegador. `/aventura/guardianes/canjear` requiere sesión de cuenta y
+usa una transacción con bloqueo de cartera: solicitudes repetidas no cobran de
+nuevo, nunca se permite saldo negativo y un personaje ya obtenido por desafío
+no cuesta oro. El desbloqueo se guarda en `player_unlocks` como `mascota`.
+No se necesita migración de base de datos.
+
+El rol `admin` de la cuenta en base de datos concede todos los guardianes,
+desbloqueos de misión (incluida la apariencia nocturna), misiones y pantallas
+Arcade. No modifica el saldo, las estadísticas ni los desafíos completados.
+Las cuentas normales siguen sus requisitos en todos los modos; enviar una
+bandera `admin` o un precio distinto desde el cliente no otorga beneficios.
+
+
+## Recuperación de sesión de jugador
+
+La sesión de cuenta dura 30 días en PostgreSQL. La sesión de jugador vive en
+memoria y se elimina tras 15 minutos sin actividad o al reiniciar el servicio.
+Un 401 de jugador ya no borra el acceso a la cuenta: el cliente usa `/unirse`
+para recuperarlo y reintenta una vez, compartiendo una única recuperación entre
+peticiones concurrentes. Si cambió el identificador, adapta las rutas propias.
+Una desconexión no elimina el token guardado. Solo una cuenta realmente vencida
+o revocada solicita volver a iniciar sesión. La recuperación no recrea salas
+ni combates perdidos por un reinicio; permite elegir otra sala sin autenticarse
+de nuevo. El cierre de sesión explícito invalida cualquier recuperación pendiente.

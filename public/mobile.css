@@ -37,3 +37,87 @@ body.app-landscape .mode-icon{font-size:23px;line-height:1;margin-bottom:5px}
 body.app-landscape .mode-card{min-height:76px;padding:8px 10px}
 body.app-landscape .mode-card strong{font-size:15px}
 body.app-landscape .mode-icon{font-size:21px;margin-bottom:4px}
+/* Compact selection grids: only cards scroll; actions remain visible. */
+#seleccionar-sala,#seleccionar-mascota{overflow:hidden;padding:16px;gap:0}
+#seleccionar-sala>.intro,#seleccionar-mascota>.intro{margin:0 0 10px;flex:none}
+#seleccionar-sala .titulo,#seleccionar-mascota .titulo{font-size:30px;margin:4px 0 6px}
+#seleccionar-sala .subtitulo,#seleccionar-mascota .subtitulo{font-size:12px;line-height:1.4}
+#seleccionar-sala>.profile-card{padding:8px 12px;margin:0 0 8px}
+#seleccionar-sala>.room-grid,#seleccionar-mascota>.tarjetas{display:grid;flex:1 1 auto;min-height:0;width:100%;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:minmax(156px,calc((100% - 10px)/2));align-content:start;gap:10px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:4px 5px 8px 2px}
+#seleccionar-sala>.room-grid{grid-auto-rows:minmax(184px,max-content)}
+#seleccionar-sala .room-card{display:flex;flex-direction:column;justify-content:flex-end;min-width:0;min-height:184px;padding:0;border-radius:14px}
+#seleccionar-sala .room-card-content{position:relative;inset:auto;width:100%;padding:12px;overflow-wrap:anywhere}
+#seleccionar-sala .room-card h2{font-size:19px;line-height:1.1;margin:5px 0}
+#seleccionar-sala .room-card p{font-size:10px;line-height:1.35}
+#seleccionar-sala .room-meta{flex-wrap:wrap;gap:6px;margin-top:8px;font-size:10px}
+#seleccionar-sala .room-action{min-height:36px;max-width:100%;padding:7px 10px;font-size:11px;white-space:normal}
+#seleccionar-sala .room-state{font-size:9px}
+#seleccionar-mascota .tarjeta-de-mokepon{min-height:0;border-radius:14px;transform:none}
+#seleccionar-mascota .tarjeta-de-mokepon img{inset:0;width:100%;height:75%;object-fit:contain}
+#seleccionar-mascota .card-copy{width:100%;margin:0;padding:10px;align-self:flex-end}
+#seleccionar-mascota .card-name{font-size:20px;margin-top:3px}
+#seleccionar-mascota .card-element{font-size:8px;letter-spacing:.05em}
+#seleccionar-mascota .card-lore{font-size:10px;margin-top:3px}
+#seleccionar-mascota .premium-badge,#seleccionar-mascota .premium-progress{font-size:8px}
+#seleccionar-mascota .tarjeta-de-mokepon:before{width:22px;height:22px;top:7px;right:7px;font-size:12px}
+#seleccionar-mascota>.skin-selector{width:100%;max-height:62px;margin:6px 0;padding-top:5px}
+#seleccionar-mascota .skin-selector h2{display:none}
+#seleccionar-mascota .skin-grid{gap:6px}
+#seleccionar-mascota .skin-option label{min-width:130px;padding:4px 8px;font-size:11px}
+#seleccionar-mascota .skin-option img{width:30px;height:30px}
+.selection-actions{display:flex;align-items:center;justify-content:center;flex:0 0 auto;gap:10px;width:100%;padding:8px 0 0;border-top:1px solid var(--border);background:#0b211a}
+.selection-actions .primary-button,.selection-actions .ghost-button{margin:0;min-height:40px;padding:9px 14px;font-size:12px}
+#seleccionar-sala .lobby-status{min-height:0;margin:0;font-size:11px}
+#seleccionar-sala .lobby-status:empty{display:none}
+@media(max-width:599px){#seleccionar-sala>.room-grid,#seleccionar-mascota>.tarjetas{grid-template-columns:repeat(2,minmax(0,1fr))}.selection-actions{gap:6px}.selection-actions .primary-button{min-width:0;flex:1;gap:12px}}
+body.app-landscape #seleccionar-sala,body.app-landscape #seleccionar-mascota{padding:8px 10px}
+body.app-landscape #seleccionar-sala>.room-grid,body.app-landscape #seleccionar-mascota>.tarjetas{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+body.app-landscape #seleccionar-mascota>.tarjetas{grid-auto-rows:minmax(88px,calc((100% - 7px)/2))}
+body.app-landscape #seleccionar-sala>.room-grid{grid-auto-rows:minmax(184px,max-content)}
+body.app-landscape #seleccionar-sala .titulo,body.app-landscape #seleccionar-mascota .titulo{font-size:22px;margin:0 0 4px}
+body.app-landscape #seleccionar-sala>.intro .subtitulo{display:none}
+body.app-landscape #seleccionar-sala>.profile-card{padding:5px 10px;margin-bottom:5px}
+body.app-landscape #seleccionar-mascota .card-copy{padding:7px}
+body.app-landscape #seleccionar-mascota .card-name{font-size:17px}
+body.app-landscape #seleccionar-mascota .card-element{font-size:7px}
+body.app-landscape #seleccionar-mascota .card-lore{display:none}
+body.app-landscape #seleccionar-mascota>.skin-selector{max-height:43px;margin:3px 0;padding-top:2px}
+body.app-landscape #seleccionar-mascota .skin-selector>.chapter{display:none}
+body.app-landscape .selection-actions{padding-top:5px}
+body.app-landscape .selection-actions button{min-height:34px;padding:6px 12px}
+
+/* Arcade cards retain all labels and rewards; the return action stays outside the scroll. */
+#arcade-niveles{padding:16px;overflow:hidden}
+#arcade-niveles .arcade-levels{grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:max-content;gap:10px;align-content:start}
+#arcade-niveles .arcade-level{min-height:220px;height:auto;gap:8px;padding:14px;border-radius:14px;overflow:visible;overflow-wrap:anywhere}
+#arcade-niveles .arcade-level-art{position:static;font-size:32px;margin:0;opacity:1}
+#arcade-niveles .arcade-level strong{font-size:19px}
+#arcade-niveles .arcade-level-reward{flex-wrap:wrap;gap:7px}
+#arcade-niveles .arcade-level-status{padding-top:8px;font-size:11px}
+#arcade-niveles>.arcade-note{font-size:10px;line-height:1.35;margin:6px auto}
+#arcade-niveles>.intro{margin-bottom:10px}
+#arcade-niveles>.intro .titulo{font-size:30px}
+@media(max-width:599px) and (orientation:portrait){#arcade-niveles .arcade-levels{grid-template-columns:1fr}}
+body.app-landscape #arcade-niveles{padding:8px 10px}
+body.app-landscape #arcade-niveles .arcade-level{min-height:170px;gap:5px;padding:10px}
+body.app-landscape #arcade-niveles .arcade-level-art{font-size:24px}
+body.app-landscape #arcade-niveles .arcade-level strong{font-size:16px}
+body.app-landscape #arcade-niveles>.intro .titulo{font-size:22px}
+body.app-landscape #arcade-niveles>.intro .subtitulo{display:none}
+body.app-landscape #arcade-niveles>.arcade-note{max-height:28px;overflow:auto}
+body.app-landscape #arcade-niveles>.arcade-guide{display:none}
+body.app-landscape #arcade-niveles .arcade-level-reward{font-size:11px;line-height:1.25}
+body.app-landscape #arcade-niveles .arcade-level .chapter{font-size:8px}
+
+/* Guardian challenges preserve the fixed action bar and existing game menus. */
+.rewards-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;flex:1;min-height:0;overflow:auto;padding:4px 4px 12px;align-content:start}
+.guardian-reward-card{min-width:0;padding:16px;border:1px solid var(--border);border-radius:16px;background:#0a211b}
+.guardian-reward-card>img{float:right;width:90px;height:90px;object-fit:contain}
+.guardian-reward-card h2{font:24px Georgia,serif;color:var(--gold);margin:4px 0 12px}
+.guardian-reward-card>strong{font-size:12px;color:var(--jade)}
+.guardian-reward-card p{font-size:12px;line-height:1.5;color:var(--muted)}
+.guardian-reward-card .primary-button{min-width:0;width:100%;margin-top:12px;justify-content:center;gap:4px}
+.reward-wallet{color:var(--gold);font-weight:700;font-size:13px;margin:0 0 8px}
+#recompensas-guardianes{padding:16px}#recompensas-guardianes>.intro{margin-bottom:10px}#recompensas-guardianes .titulo{font-size:30px}#recompensas-estado{font-size:12px;margin:0 0 6px;flex:none}
+@media(max-width:599px){.rewards-grid{grid-template-columns:1fr}.selection-actions{flex-wrap:wrap}#seleccionar-mascota .selection-actions{flex-wrap:nowrap}#seleccionar-mascota .selection-actions button{font-size:10px;padding:8px;min-width:0}}
+body.app-landscape .guardian-reward-card{padding:10px}body.app-landscape .guardian-reward-card>img{width:55px;height:55px}body.app-landscape #recompensas-guardianes{padding:10px}body.app-landscape #recompensas-guardianes .titulo{font-size:22px}body.app-landscape #recompensas-guardianes .subtitulo{font-size:10px}

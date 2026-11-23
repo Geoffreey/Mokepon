@@ -83,11 +83,14 @@ async function enviarRestablecimiento(cuenta,enlace) {
   await transporteCorreo.sendMail({from:process.env.EMAIL_FROM,to:cuenta.correo,subject:"Restablece tu contraseña de Guardianes del Mayab",text:`Hola ${cuenta.nombre},\n\nSoporte inició un restablecimiento de contraseña para tu cuenta. Abre este enlace para crear una nueva contraseña:\n${enlace}\n\nEl enlace expira en 30 minutos y solo puede utilizarse una vez. Si no solicitaste ayuda, comunícate con soporte.`})
 }
 const estadisticas = (cuenta) => db.getStatistics(cuenta.id)
-const guardianDesbloqueado = (nombre, stats) => {
-  const requisito=REQUISITOS_PREMIUM.get(nombre)
-  return !requisito||(stats.victorias>=requisito.victorias&&stats.puntos>=requisito.puntos)
+const guardianAccess=require('./server/guardian-access')
+const guardianDesbloqueado=guardianAccess.unlocked
+async function cargarAcceso(accountId,cuenta=null){
+  const [stats,raw,arcadeCompleted,account]=await Promise.all([db.getStatistics(accountId),db.getAdventureProgress(accountId),db.getArcadeProgress(accountId),cuenta||db.findAccountById(accountId)])
+  const progress={...raw,arcadeCompleted,admin:account?.rol==='admin'}
+  if(progress.admin)for(const mission of MISIONES)if(mission.unlock&&!progress.unlocks.some(u=>u.type===mission.unlock.type&&u.id===mission.unlock.id))progress.unlocks.push(mission.unlock)
+  return {stats,progress,account}
 }
-const catalogoPremium = (stats) => [...REQUISITOS_PREMIUM].map(([nombre,requisito])=>({nombre,...requisito,desbloqueado:guardianDesbloqueado(nombre,stats)}))
 const salas = [
   { id:"selva", nombre:"Templos de la Selva", descripcion:"Pirámides entre ceibas y piedra antigua", mapa:"./assets/mokemap.png" },
   { id:"volcan", nombre:"Corazón del Volcán", descripcion:"Obsidiana, fuego y cumbres sagradas", mapa:"./assets/arena-volcan.png" },
@@ -193,12 +196,12 @@ app.post('/combate/iniciar',limiteAcciones,autenticarJugador,async(req,res,next)
   const mode=req.body?.mode,guardian=req.body?.guardian,skin=req.body?.skin||'clasico'
   if(!['maquina','mision'].includes(mode)||!MOKEPONES_VALIDOS.has(guardian))return res.status(400).json({error:'Combate inválido.'})
   if(req.jugador.estadoJuego==='batalla')return res.status(409).json({error:'Termina tu duelo en línea antes de entrenar.'})
-  const [stats,progress]=await Promise.all([db.getStatistics(req.jugador.cuentaId),db.getAdventureProgress(req.jugador.cuentaId)])
-  if(!guardianDesbloqueado(guardian,stats))return res.status(403).json({error:'Este guardián todavía está bloqueado.'})
+  const {stats,progress,account}=await cargarAcceso(req.jugador.cuentaId)
+  if(!guardianDesbloqueado(guardian,stats,progress,account))return res.status(403).json({error:'Este guardián todavía está bloqueado.'})
   if(!(skin==='clasico'||(guardian==="B'alam"&&skin==='balam-nocturno'&&progress.unlocks.some(u=>u.type==='skin'&&u.id===skin))))return res.status(403).json({error:'Este aspecto todavía está bloqueado.'})
   const mission=mode==='mision'?MISIONES.find(m=>m.id===req.body?.missionId):null
   if(mode==='mision'&&!mission)return res.status(400).json({error:'Misión inválida.'})
-  if(mission?.requires&&!progress.completedMissions.includes(mission.requires))return res.status(403).json({error:'Completa la misión anterior.'})
+  if(!progress.admin&&mission?.requires&&!progress.completedMissions.includes(mission.requires))return res.status(403).json({error:'Completa la misión anterior.'})
   const enemies=[...MOKEPONES_VALIDOS].filter(g=>g!==guardian),enemy=mission?.enemy||enemies[randomInt(0,enemies.length)]
   const match=combateService.create({mode,mission,arena:mission?.id==='fuego-ancestral'?'volcan':mission?.id==='voz-lago'?'lago':'cueva',participants:[{accountId:req.jugador.cuentaId,name:req.jugador.nombre,guardian,skin},{accountId:null,name:mission?'Guardián de misión':'Máquina',guardian:enemy,skin:'clasico'}]})
   res.set('Cache-Control','no-store');res.status(201).json(combateService.snapshot(match,0))
@@ -244,26 +247,31 @@ app.post("/auth/login",limiteUnirse,async(req,res,next)=>{
   const cuenta=await db.findAccountByUsername(normalizarUsuario(req.body?.usuario))
   if(!cuenta||!claveValida(req.body?.clave)||!verificarClave(req.body.clave,cuenta)){await auditar(req,"login_fallido",{usuario:normalizarUsuario(req.body?.usuario),exito:false});return res.status(401).json({error:"Usuario o contraseña incorrectos."})}
   if(cuenta.activa!==true){const reenvioToken=randomUUID()+randomUUID();await db.updateResendHash(cuenta.id,hashToken(reenvioToken));await auditar(req,"login_cuenta_inactiva",{cuentaId:cuenta.id,usuario:cuenta.usuario,exito:false});return res.status(403).json({error:"Debes activar tu cuenta antes de iniciar sesión.",requiereActivacion:true,usuario:cuenta.usuario,reenvioToken})}
-  const token=await crearLogin(cuenta);await auditar(req,"login_exitoso",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.json({token,usuario:cuenta.usuario,nombre:cuenta.nombre,estadisticas:await estadisticas(cuenta)})
+  const token=await crearLogin(cuenta);void auditar(req,"login_exitoso",{cuentaId:cuenta.id,usuario:cuenta.usuario}).catch(error=>console.error("Auditoría de acceso:",error.message));res.json({token,usuario:cuenta.usuario,nombre:cuenta.nombre,estadisticas:await estadisticas(cuenta)})
   }catch(error){next(error)}
 })
 app.post("/auth/activar",limiteActivacion,async(req,res,next)=>{try{const usuario=normalizarUsuario(req.body?.usuario),cuenta=await db.findAccountByUsername(usuario),codigo=String(req.body?.codigo||"");if(!cuenta||cuenta.activa===true)return res.status(400).json({error:"Solicitud de activación inválida."});if(!cuenta.activacion||cuenta.activacion.expira<Date.now()||cuenta.activacion.intentos>=5)return res.status(400).json({error:"El código expiró. Solicita uno nuevo."});await db.incrementActivationAttempts(cuenta.id);if(!/^\d{6}$/.test(codigo)||hashToken(codigo)!==cuenta.activacion.codigoHash){await auditar(req,"activacion_fallida",{cuentaId:cuenta.id,usuario,exito:false});return res.status(400).json({error:"Código incorrecto."})}await db.activateAccount(cuenta.id);const token=await crearLogin(cuenta);await auditar(req,"cuenta_activada",{cuentaId:cuenta.id,usuario});res.json({token,usuario,nombre:cuenta.nombre,estadisticas:await estadisticas(cuenta)})}catch(error){next(error)}})
 app.post("/auth/reenviar-codigo",limiteActivacion,async(req,res,next)=>{try{const cuenta=await db.findAccountByUsername(normalizarUsuario(req.body?.usuario)),reenvioToken=String(req.body?.reenvioToken||"");if(!cuenta||cuenta.activa===true||!cuenta.activacion?.reenvioHash||hashToken(reenvioToken)!==cuenta.activacion.reenvioHash)return res.status(202).json({mensaje:"Si la solicitud es válida, enviaremos un código."});const activacion=generarCodigo();await db.replaceActivation(cuenta.id,activacion);await enviarCodigo(cuenta,activacion.codigo);await auditar(req,"codigo_reenviado",{cuentaId:cuenta.id,usuario:cuenta.usuario});res.status(202).json({mensaje:"Código enviado.",reenvioToken:activacion.reenvioToken})}catch(error){next(error)}})
 app.get("/auth/perfil",autenticarCuenta,async(req,res,next)=>{try{res.set("Cache-Control","no-store");res.json({usuario:req.cuenta.usuario,nombre:req.cuenta.nombre,estadisticas:await estadisticas(req.cuenta)})}catch(error){next(error)}})
 app.get("/aventura/progreso",autenticarCuenta,async(req,res,next)=>{try{
-  const [progress,stats]=await Promise.all([db.getAdventureProgress(req.cuenta.id),estadisticas(req.cuenta)]),completed=new Set(progress.completedMissions)
-  res.set("Cache-Control","no-store");res.json({...progress,guardianesPremium:catalogoPremium(stats),missions:MISIONES.map((mission)=>({...mission,unlocked:!mission.requires||completed.has(mission.requires),completed:completed.has(mission.id)}))})
+  const {progress,stats,account}=await cargarAcceso(req.cuenta.id,req.cuenta),completed=new Set(progress.completedMissions)
+  res.set("Cache-Control","no-store");res.json({...progress,guardianesPremium:guardianAccess.catalog(stats,progress,account),missions:MISIONES.map((mission)=>({...mission,unlocked:progress.admin||!mission.requires||completed.has(mission.requires),completed:completed.has(mission.id)}))})
 }catch(error){next(error)}})
+app.post('/aventura/guardianes/canjear',limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const result=await db.redeemGuardian(req.cuenta.id,req.body?.guardian)
+  res.set('Cache-Control','no-store');res.json(result)
+}catch(error){if(error.status)return res.status(error.status).json({error:error.message});next(error)}})
 app.get("/arcade/progreso",autenticarCuenta,async(req,res,next)=>{try{
   const completed=await db.getArcadeProgress(req.cuenta.id)
-  res.set("Cache-Control","no-store");res.json({levels:arcade.LEVELS.map((level,i)=>({...level,completed:completed.includes(level.id),unlocked:i===0||completed.includes(arcade.LEVELS[i-1].id)}))})
+  res.set("Cache-Control","no-store");res.json({levels:arcade.LEVELS.map((level,i)=>({...level,completed:completed.includes(level.id),unlocked:req.cuenta.rol==="admin"||i===0||completed.includes(arcade.LEVELS[i-1].id)}))})
 }catch(error){next(error)}})
 app.post("/arcade/iniciar",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
   const level=arcade.LEVELS.find(l=>l.id===req.body?.levelId),guardian=req.body?.guardian
   if(!level||!MOKEPONES_VALIDOS.has(guardian))return res.status(400).json({error:"Elige un nivel y un guardián válidos."})
-  if(!guardianDesbloqueado(guardian,await estadisticas(req.cuenta)))return res.status(403).json({error:"Este guardián todavía está bloqueado."})
+  const {stats,progress,account}=await cargarAcceso(req.cuenta.id,req.cuenta)
+  if(!guardianDesbloqueado(guardian,stats,progress,account))return res.status(403).json({error:"Este guardián todavía está bloqueado."})
   const index=arcade.LEVELS.indexOf(level),completed=await db.getArcadeProgress(req.cuenta.id)
-  if(index>0&&!completed.includes(arcade.LEVELS[index-1].id))return res.status(403).json({error:"Supera la pantalla anterior para abrir este sendero."})
+  if(req.cuenta.rol!=="admin"&&index>0&&!completed.includes(arcade.LEVELS[index-1].id))return res.status(403).json({error:"Supera la pantalla anterior para abrir este sendero."})
   const id=randomUUID();await db.startArcadeRun(id,req.cuenta.id,level.id,guardian)
   res.set("Cache-Control","no-store");res.status(201).json({id,levelId:level.id})
 }catch(error){next(error)}})
@@ -282,7 +290,7 @@ app.post("/arcade/finalizar",limiteAcciones,autenticarCuenta,async(req,res,next)
   res.set("Cache-Control","no-store");res.json(result)
 }catch(error){next(error)}})
 app.post("/aventura/combate",autenticarCuenta,(req,res)=>res.status(410).json({error:"Los duelos ahora son en tiempo real. Recarga el juego para actualizarlo."}))
-app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);await auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario});res.status(204).end()}catch(error){next(error)}})
+app.post("/auth/logout",autenticarCuenta,async(req,res,next)=>{try{const tokenHash=hashToken(req.loginToken);await db.deleteSession(tokenHash);void auditar(req,"logout",{cuentaId:req.cuenta.id,usuario:req.cuenta.usuario}).catch(error=>console.error("Auditoría de salida:",error.message));res.status(204).end()}catch(error){next(error)}})
 app.get("/casino",autenticarCuenta,async(req,res,next)=>{try{const [progress,history]=await Promise.all([db.getAdventureProgress(req.cuenta.id),db.getCasinoHistory(req.cuenta.id)]);res.set("Cache-Control","no-store");res.json({wallet:progress.wallet,history,limits:CASINO_LIMITS,multipliers:CASINO_MULTIPLIERS})}catch(error){next(error)}})
 app.post("/casino/dados-ajaw",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
   const currency=String(req.body?.currency||""),choice=String(req.body?.choice||""),bet=Number(req.body?.bet),clientRoundId=String(req.body?.clientRoundId||""),limits=CASINO_LIMITS[currency]
@@ -411,8 +419,8 @@ app.post("/salas/:salaId/chat",limiteChat,autenticarJugador,(req,res)=>{
 app.post("/mokepon/:jugadorId",limiteAcciones,autenticarJugador,autorizarJugadorPropio,async(req,res,next)=>{try{
   if(!req.jugador.salaId) return res.status(409).json({error:"Debes entrar a una sala."})
   if(!MOKEPONES_VALIDOS.has(req.body.mokepon)) return res.status(400).json({error:"Guardián inválido."})
-  const [progress,stats]=await Promise.all([db.getAdventureProgress(req.jugador.cuentaId),db.getStatistics(req.jugador.cuentaId)]),requisitoPremium=REQUISITOS_PREMIUM.get(req.body.mokepon)
-  if(!guardianDesbloqueado(req.body.mokepon,stats))return res.status(403).json({error:`${req.body.mokepon} todavía está bloqueado.`,requisito:requisitoPremium})
+  const {progress,stats,account}=await cargarAcceso(req.jugador.cuentaId),requisitoPremium=REQUISITOS_PREMIUM.get(req.body.mokepon)
+  if(!guardianDesbloqueado(req.body.mokepon,stats,progress,account))return res.status(403).json({error:`${req.body.mokepon} todavía está bloqueado.`,requisito:requisitoPremium})
   const skin=req.body?.skin||"clasico",skinValido=skin==="clasico"||(req.body.mokepon==="B'alam"&&skin==="balam-nocturno"&&progress.unlocks.some((u)=>u.type==="skin"&&u.id===skin))
   if(!skinValido)return res.status(403).json({error:"Ese skin todavía no está desbloqueado."})
   if(req.jugador.estadoJuego==="batalla")return res.status(409).json({error:"Termina tu combate antes de cambiar de guardián."})

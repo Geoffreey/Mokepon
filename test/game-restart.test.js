@@ -52,3 +52,20 @@ test('una petición detenida vence y los controles conservan su propia señal de
  const external=new AbortController();const controls=c.api('/combate/uno/control',{signal:external.signal})
  assert.equal(received,external.signal);external.abort();await assert.rejects(controls,/Abortado/)
 })
+test('cerrar sesión limpia el acceso y recarga aunque el servidor no responda',()=>{
+ let reloaded=false,removed=false,request
+ const c=setup({authToken:'sesion',jugadorToken:'jugador',intervaloSala:1,localStorage:{removeItem(){removed=true}},detenerIntervalosJuego(){},clearInterval(){},detenerDuelo(){},detenerArcade(){},fetch(url,options){request={url,options};return new Promise(()=>{})},location:{reload(){reloaded=true}}})
+ load(main,'function cerrarSesion(','function mostrarModos',c)
+ c.cerrarSesion()
+ assert.equal(reloaded,true);assert.equal(removed,true);assert.equal(c.authToken,null);assert.equal(c.jugadorToken,null)
+ assert.equal(request.options.keepalive,true);assert.equal(request.options.headers.Authorization,'Bearer sesion')
+})
+test('no envía credenciales mientras falta la configuración o la respuesta de CAPTCHA',async()=>{
+ for(const loading of [true,false]){
+  let sent=false
+  const c=setup({captchaCargando:loading,captchaActivo:true,obtenerCaptcha:()=>'',api:async()=>{sent=true}})
+  load(main,'async function registrarJugador(','function cambiarModoAuth',c)
+  await c.registrarJugador({preventDefault(){}})
+  assert.equal(sent,false);assert.ok(c.$('error-registro').textContent)
+ }
+})
