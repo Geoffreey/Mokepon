@@ -89,3 +89,37 @@ test('integración del arcade: Start pausa/continúa, desconexión pausa y salir
   assert.equal($('arcade-tutorial-content').scrollTop,0)
 
 })
+
+test('lectura de navegación: direcciones, volver y palanca de desplazamiento',()=>{
+  const reader=G.createReader();reader.read([pad()])
+  const left=reader.read([pad({axes:[-.8,0]})]);assert.equal(left.direction,'left');assert.equal(left.directionPressed,'left')
+  assert.equal(reader.read([pad({axes:[-.8,0]})]).directionPressed,null)
+  const up=reader.read([pad({buttons:[12]})]);assert.equal(up.direction,'up');assert.equal(up.menuPressed,-1)
+  const back=reader.read([pad({buttons:[1]})]);assert.equal(back.backPressed,true)
+  assert.equal(reader.read([pad({buttons:[1]})]).backPressed,false)
+  const scrolling=reader.read([pad({axes:[0,0,0,.9]})]);assert.equal(scrolling.scroll,1)
+  assert.equal(scrolling.input,0)
+})
+
+test('DualSense: reconoce el perfil conocido y navega arriba, abajo y en horizontal',()=>{
+  const reader=G.createReader(),dual=(axes,buttons=[])=>pad({id:'DualSense Wireless Controller',mapping:'',axes,buttons})
+  assert.equal(reader.read([dual([0,0,0,0])]).supported,true)
+  assert.equal(reader.read([dual([.9,.5,0,0])]).direction,'right','una diagonal leve no debe saltar de fila')
+  assert.equal(reader.read([dual([.85,.9,0,0])]).direction,'right','histéresis evita oscilación entre ejes')
+  assert.equal(reader.read([dual([.1,-.95,0,0])]).direction,'up')
+  assert.equal(reader.read([dual([0,.95,0,0])]).direction,'down')
+  assert.equal(reader.read([dual([0,0,0,0])]).direction,null)
+  assert.equal(G.decode(dual([0,0,0,.2])).scrollY,0)
+  assert.ok(G.decode(dual([0,0,.9,.9])).scrollY>0)
+  assert.ok(G.decode(dual([0,0,.9,.9])).scrollX>0)
+})
+test('confirmar no bloquea la palanca de navegación hasta que se centre',()=>{
+  const reader=G.createReader();reader.read([pad()])
+  reader.blockActions()
+  const moving=reader.read([pad({axes:[0,-1,0,0],buttons:[0]})])
+  assert.equal(moving.direction,'up');assert.equal(moving.confirmPressed,false)
+  reader.read([pad({axes:[0,-1,0,0]})])
+  assert.equal(reader.read([pad({axes:[0,-1,0,0],buttons:[0]})]).confirmPressed,true)
+  reader.block()
+  assert.equal(reader.read([pad({axes:[1,0,0,0],buttons:[0]})]).input,2,'se conserva movimiento sin repetir el salto sostenido')
+})

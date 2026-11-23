@@ -212,3 +212,51 @@ y de los peligros se expanden dentro de la guía. En vertical, la cámara acerca
 el escenario según el espacio disponible; en escritorio y horizontal mantiene
 la vista panorámica. El escenario conserva su proporción y deja siempre espacio
 para el encabezado, la cartera y los controles táctiles.
+
+### Navegación completa con mando y controles táctiles
+
+El mando permite recorrer las pantallas del juego y de restablecimiento de
+contraseña: cruceta o palanca izquierda para seleccionar, A / ✕ para activar,
+B / ○ para volver y palanca derecha para desplazar el contenido. Los campos
+abren un teclado en pantalla; las cantidades y los selectores tienen editores
+compatibles con mando. Los avisos y confirmaciones del juego también se pueden
+aceptar o cancelar con el mando. Las verificaciones externas de reCAPTCHA y los
+diálogos propios del navegador se completan con los controles del dispositivo.
+En el mapa anterior al duelo, Start alterna entre explorar y navegar por los
+menús. El arcade conserva sus controles de combate en tiempo real.
+
+La barra del arcade distingue **Salud** (cinco corazones por intento) de
+**Intentos** (tres al iniciar). Los controles continuos bloquean gestos de zoom
+únicamente en sus zonas táctiles, incluidos sus iconos y textos; el resto del
+contenido conserva la ampliación del navegador. Las entradas móviles usan
+texto de al menos 16 px para evitar ampliaciones al enfocarlas.
+
+Las pruebas `test/gamepad-ui.test.js` verifican la navegación espacial. Para
+repetir las 17 comprobaciones con DOM real en desarrollo, copia temporalmente
+`test/browser/controller.html` a `public/__controller-check.html` y
+`test/browser/controller.js.txt` a `public/__controller-check.js`, abre
+`/__controller-check.html` y pulsa **Ejecutar pruebas**. Elimina ambas copias
+públicas al terminar; los archivos de prueba no se incluyen en la imagen.
+
+### iPhone instalado, vista horizontal y DualSense
+
+`manifest.webmanifest`, las etiquetas Apple y `icons/apple-touch-icon-v1.png`
+definen el nombre, la portada y el modo de app instalada. No se añade caché
+sin conexión ni service worker. Si iOS conserva la letra del acceso anterior,
+vuelve a añadir el sitio a Inicio desde Safari para recoger el icono nuevo.
+
+`mobile.css` adapta **todos los menús**, no solo el arcade. El encabezado se
+mantiene visible y cada lista desplaza su propio contenido, respetando las áreas
+seguras. `app-viewport.js` adapta la altura al viewport visual real de iPhone,
+incluidos cambios de orientación y modo standalone, sin redimensionar durante
+un gesto de ampliación.
+
+La lectura de DualSense utiliza dirección dominante e histéresis para evitar
+oscilación en diagonales. La palanca derecha desplaza en ambos ejes con velocidad
+proporcional, independiente de los Hz de la pantalla. La navegación no desplaza
+ancestros `overflow:hidden`; confirmar tampoco exige centrar la palanca izquierda.
+Las pruebas unitarias incluyen perfiles DualSense estándar y el identificador
+conocido sin `mapping`. Se verificaron menús y arcade en Chrome aislado, con
+viewport móvil exacto (390×844 y 844×390), áreas seguras simuladas y entradas de
+mando simuladas. La comprobación física en Safari/iPhone con DualSense sigue
+requiriendo el dispositivo real.

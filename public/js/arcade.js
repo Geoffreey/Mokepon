@@ -164,7 +164,9 @@ function dibujarArcade(){
   }else{
     c.fillStyle='#ffffff20';c.fillRect(30,26,viewWidth-60,3);c.fillStyle=theme.accent;c.fillRect(30,26,(viewWidth-60)*Math.min(p.x/2700,1),3)
   }
-  $('arcade-vida').textContent=`${'♥'.repeat(Math.max(0,p.hp))}${'♡'.repeat(5-Math.max(0,p.hp))} · ${p.lives} vidas`
+  $('arcade-vida').textContent=`Salud ${'♥'.repeat(Math.max(0,p.hp))}${'♡'.repeat(5-Math.max(0,p.hp))}`
+  $('arcade-vida').setAttribute('aria-label',`Salud: ${p.hp} de 5 corazones`)
+  $('arcade-intentos').textContent=`Intentos: ${p.lives} / 3`
   $('arcade-poder').textContent=`${MayabArcade.POWERS[s.guardian].name} · ${p.shootCooldown?'Recargando…':arcadeGamepadStatus==='connected'?'B / ○ · Listo':'K / Z · Listo'}`
   $('arcade-bolsa').textContent=`Oro ${s.loot.gold} · Jade ${s.loot.jade} · Obsidiana ${s.loot.obsidian}`
   $('arcade-objetivo').textContent=b.active?(s.projectiles.some(shot=>Math.abs(shot.x-p.x)<180)?'¡Salta! Onda de piedra':b.cooldown<=35?'¡Prepárate! Onda de piedra':`⚔ ${level.boss}`):p.x>2450?'⚑ Punto de control cercano':'Encuentra al guardián →'
@@ -278,7 +280,7 @@ function actualizarMandoArcade(){
       waiting:'🎮 Conecta tu mando Bluetooth al dispositivo y pulsa un botón para detectarlo.',
       unsupported:'Mando detectado sin distribución estándar. Usa los botones en pantalla o un mando compatible.',
       unavailable:'Este navegador no permite leer el mando. Puedes jugar con los controles táctiles.'}
-    $('arcade-mando').textContent=labels[status];sections.arcadeJuego.classList.toggle('arcade-with-gamepad',status==='connected')
+    $('arcade-mando').textContent=status==='connected'&&/dualsense|054c.*0ce6/i.test(pad.id)?'🎮 DualSense · ✕ salta · □ golpea · ○ / R2 lanza · Options pausa':labels[status];sections.arcadeJuego.classList.toggle('arcade-with-gamepad',status==='connected')
   }
   if(pad.disconnected){arcadeGamepadInput=0;arcadePause()}
   if(document.hidden){arcadeGamepadReader.block();arcadeGamepadInput=0;return}
@@ -287,6 +289,7 @@ function actualizarMandoArcade(){
     if(arcadePaused)arcadeResume();else arcadePause()
     return
   }
+  if(window.MayabUIController){if(arcadePaused)window.MayabUIController.navigate(pad);else window.MayabUIController.clear();return}
   const menu=!$('arcade-tutorial').hidden?[$('arcade-tutorial-play')]:!$('arcade-overlay').hidden?['arcade-continuar','arcade-reintentar','arcade-mapa'].map($):[]
   const buttons=menu.filter(button=>!button.hidden&&!button.disabled&&button.getClientRects().length)
   document.querySelectorAll('.arcade-gamepad-focus').forEach(button=>button.classList.remove('arcade-gamepad-focus'))
@@ -324,3 +327,9 @@ function configurarVistaArcade(){
 window.addEventListener('resize',configurarVistaArcade)
 
 if(typeof ResizeObserver!=='undefined')new ResizeObserver(configurarVistaArcade).observe(arcadeCanvas.parentElement)
+
+for(const type of ['touchstart','touchmove','touchend','gesturestart','gesturechange','dblclick']){
+  document.addEventListener(type,event=>{
+    if(event.target.closest?.('.arcade-controls,.map-controls')&&event.cancelable)event.preventDefault()
+  },{passive:false})
+}

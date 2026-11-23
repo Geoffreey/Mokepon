@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "Guardianes del Mayab",
+  "short_name": "Guardianes",
+  "description": "Explora el Mayab y combate con tus guardianes.",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#071914",
+  "theme_color": "#071914",
+  "icons": [
+    {"src":"/icons/mayab-192-v1.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"/icons/mayab-512-v1.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"/icons/mayab-512-v1.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+  ]
+}

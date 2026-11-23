@@ -1,0 +1,35 @@
+window.addEventListener('load',async()=>{
+ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),query=new URLSearchParams(location.search),report={passed:false,checks:[]}
+ const check=(name,value)=>{if(!value)throw new Error(name);report.checks.push(name)}
+ try{
+  const login=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usuario:'__QA_USERNAME__',clave:'__QA_PASSWORD__',captchaToken:'desarrollo-local'})})
+  const profile=await login.json();if(!login.ok)throw new Error(profile.error)
+  authToken=profile.token;await iniciarJugador(profile);await pause(100)
+  if(query.has('notch')){document.documentElement.style.setProperty('--safe-left','47px');document.documentElement.style.setProperty('--safe-right','47px');document.documentElement.style.setProperty('--safe-bottom','21px')}
+  const pad={id:'DualSense Wireless Controller',index:0,mapping:'standard',connected:true,axes:[0,0,0,0],buttons:Array.from({length:17},()=>({pressed:false,value:0}))}
+  Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>[]})
+  const reader=MayabGamepad.createReader(),drive=()=>MayabUIController.navigate(reader.read([pad]))
+  await pause(70)
+  if(query.get('view')==='arcade'){
+    await abrirArcade();arcadeLevelId='selva';mascotaJugador='Cadejo';skinJugador='clasico';await iniciarArcade();await pause(80);arcadeResume();await pause(100)
+    check('HUD visible',document.getElementById('arcade-intentos').getBoundingClientRect().bottom<=innerHeight)
+    check('salud e intentos separados',document.getElementById('arcade-vida').textContent.includes('Salud')&&document.getElementById('arcade-intentos').textContent.includes('Intentos'))
+  }else{
+    drive()
+    const root=document.getElementById('seleccionar-modo'),title=root.querySelector('h1'),before=title.getBoundingClientRect().top,initial=document.querySelector('.controller-focus')
+    check('título horizontal visible',before>=0&&title.getBoundingClientRect().bottom<innerHeight)
+    pad.axes[1]=1;drive();const down=document.querySelector('.controller-focus');check('palanca izquierda abajo',down&&down!==initial)
+    pad.axes[1]=0;drive();pad.axes[1]=-1;drive();const up=document.querySelector('.controller-focus');check('palanca izquierda arriba',up&&up!==down)
+    pad.axes[1]=0;drive()
+    const grid=root.querySelector('.mode-grid');grid.style.maxHeight='80px';grid.scrollTop=0;pad.axes[3]=1;await pause(50);drive();check('palanca derecha responde inmediatamente',grid.scrollHeight<=grid.clientHeight+2||grid.scrollTop>0)
+    pad.axes[3]=0;drive();grid.style.maxHeight=''
+    check('el panel fijo no se desplaza',root.scrollTop===0)
+    check('el título no se oculta',Math.abs(title.getBoundingClientRect().top-before)<2)
+    grid.scrollTop=0;MayabUIController.clear()
+    report.layout={titleTop:before,titleBottom:title.getBoundingClientRect().bottom,gridHeight:grid.clientHeight,gridScrollHeight:grid.scrollHeight,panelTop:root.getBoundingClientRect().top,panelBottom:root.getBoundingClientRect().bottom}
+  }
+  check('panel dentro de pantalla',Array.from(document.querySelectorAll('main>section')).filter(el=>!el.hidden).every(el=>el.getBoundingClientRect().bottom<=innerHeight+2))
+  report.viewport=[innerWidth,innerHeight];report.passed=true
+ }catch(error){report.error=error.message;console.error(error)}
+ document.body.dataset.qaReport=JSON.stringify(report)
+})

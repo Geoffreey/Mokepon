@@ -1,0 +1,29 @@
+document.getElementById('run').onclick=async()=>{
+ const api=window.MayabUIController,root=document.getElementById('fixture'),report=document.getElementById('test-report'),results=[]
+ const check=(name,condition)=>{if(!condition)throw new Error(name);results.push(name)}
+ const field=id=>document.getElementById(id)
+ const pad=extra=>({connected:true,supported:true,input:0,direction:null,scroll:0,...extra})
+ const modalButton=text=>Array.from(document.querySelectorAll('.controller-dialog button')).find(el=>el.textContent===text)
+ try{
+  const list=api.targets(root)
+  check('radio usa su tarjeta',list.includes(document.querySelector('label[for="guardian-test"]')))
+  check('excluye guardian bloqueado',!list.includes(document.querySelector('label[for="guardian-disabled"]')))
+  check('excluye elementos ocultos',!list.includes(field('hidden')))
+  api.navigate(pad());check('seleccion inicial visible',field('first').classList.contains('controller-focus'))
+  api.navigate(pad({direction:'right'}));check('navega a la derecha',field('second').classList.contains('controller-focus'))
+  let back=0;field('arcade-volver').onclick=()=>back++;api.navigate(pad({backPressed:true}));check('B vuelve',back===1)
+  let inputEvents=0;field('text').addEventListener('input',()=>inputEvents++)
+  api.activate(field('text'));check('abre teclado en pantalla',!!document.querySelector('.controller-keyboard'))
+  modalButton('a').click();modalButton('b').click();check('escribe y emite evento',field('text').value==='ab'&&inputEvents===2)
+  modalButton('Borrar').click();check('borra',field('text').value==='a')
+  modalButton('123 / @').click();modalButton('@').click();check('simbolos',field('text').value==='a@')
+  modalButton('Listo').click();check('cierra teclado',!document.querySelector('.controller-dialog'))
+  api.activate(field('password'));modalButton('a').click();check('oculta contraseña',document.querySelector('.controller-preview').textContent==='•');modalButton('Listo').click()
+  api.activate(field('number'));modalButton('+').click();modalButton('+').click();check('limite numerico',field('number').value==='2');modalButton('Listo').click()
+  api.activate(field('choice'));modalButton('Jade').click();check('selecciona recurso',field('choice').value==='jade')
+  let confirmed=api.confirm('Prueba de confirmación');api.navigate(pad({backPressed:true}));check('B cancela confirmacion',await confirmed===false)
+  let notice=api.notice('Prueba de aviso');modalButton('Entendido').click();await notice;check('cierra aviso',!document.querySelector('.controller-dialog'))
+  api.activate(document.querySelector('label[for="guardian-test"]'));check('elige guardian',field('guardian-test').checked)
+  report.textContent=results.length+' comprobaciones de navegador OK: '+results.join(' · ')
+ }catch(error){report.textContent='FALLO: '+error.message;console.error(error)}
+}
