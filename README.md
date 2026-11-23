@@ -143,3 +143,72 @@ usar `mokepon_web` como hostname y `8080` como puerto interno.
 cp .env.production.example .env.production
 docker compose --env-file .env.production -f compose.production.yml up -d --build
 ```
+
+## Arcade · Senderos del Mayab
+
+El menú incluye tres pantallas de plataformas: Selva (Kabrak), Ruinas (Sipak)
+y Volcán (B'alam). El guardián elegido se mueve con flechas o A/D, salta con
+Espacio, W o ↑ golpea de cerca con J/X y lanza su poder a distancia con K/Z. Cada guardián
+tiene un proyectil de fuego, agua o tierra que se recarga automáticamente sin
+gastar recursos. P o Escape pausa la partida. La guía inicial explica todos
+los controles y puede abrirse de nuevo con **Controles**. Hay controles
+táctiles y pausa automática al cambiar de pestaña. Cada intento tiene tres
+vidas y un punto de control antes del jefe que restaura la salud. Los peligros
+del camino incluyen tarántulas, serpientes, alacranes y chichicaste; esta última
+es una planta fija que hace daño por contacto y no se elimina saltando encima. Al perder
+una vida en el combate final, el jefe también recupera su salud.
+
+Vencer desbloquea la siguiente pantalla. Los recursos recogidos más el premio
+del nivel se acreditan una sola vez, en la primera victoria de cada pantalla;
+repetir niveles no aumenta la cartera. Una partida en curso no se recupera
+al recargar; las pantallas completadas y los recursos acreditados se conservan
+en PostgreSQL. Los intentos expiran a las dos horas y duran hasta diez minutos
+de juego activo. Iniciar un intento reemplaza cualquier otro que esté pendiente.
+
+La simulación de 60 pasos por segundo se comparte entre cliente y servidor en
+`public/js/arcade-engine.js`. El servidor reproduce los controles para verificar
+la victoria y calcular el botín; no acepta cantidades ni resultados declarados
+por el cliente. La migración `011_arcade.sql` conserva intentos y progreso; el
+abono y el desbloqueo se ejecutan en una transacción idempotente.
+
+Pruebas de físicas, victorias, replays y API (con PostgreSQL disponible):
+
+```bash
+docker exec mokepon node --test test/arcade-engine.test.js
+```
+
+### Celular horizontal y mandos
+
+Al girar el dispositivo a horizontal (pantallas de hasta 1200 px de ancho y
+600 px de alto), el arcade ocupa la vista, respeta las áreas seguras del
+celular y dispone movimiento a la izquierda y acciones a la derecha. Al
+cambiar entre vertical y horizontal, la partida se pausa. El botón **Pantalla
+completa** se ofrece cuando el navegador lo admite; no es necesario para
+usar el diseño horizontal.
+
+Los mandos Bluetooth o USB se leen con Gamepad API, sin pedir acceso a Web
+Bluetooth: primero se emparejan desde el sistema operativo. El navegador
+debe reconocer su distribución como `standard`, permitir Gamepad API y servir
+el juego mediante HTTPS (localhost también permite las pruebas locales).
+Puede ser necesario pulsar y soltar un botón para que el navegador lo detecte.
+
+- Palanca izquierda o cruceta: mover.
+- A / ✕: saltar; confirmar en la guía y los menús.
+- X / □: golpear.
+- B / ○ o RT / R2: lanzar poder.
+- Start / Options: pausar y continuar.
+- Cruceta arriba/abajo: seleccionar acciones en los menús del arcade.
+
+Los controles táctiles permanecen disponibles con un mando conectado. La
+lectura aplica una zona muerta y espera a soltar botones tras una reconexión
+o una pausa. Si se desconecta el mando seleccionado, la partida se pausa.
+Las pruebas automatizadas simulan mandos estándar y desconexiones; la
+compatibilidad de cada combinación de mando, sistema y navegador requiere
+probarse con el dispositivo físico.
+
+La guía del arcade ajusta su altura al panel disponible: el contenido se puede
+desplazar y el botón de inicio permanece visible al pie. Los detalles del mando
+y de los peligros se expanden dentro de la guía. En vertical, la cámara acerca
+el escenario según el espacio disponible; en escritorio y horizontal mantiene
+la vista panorámica. El escenario conserva su proporción y deja siempre espacio
+para el encabezado, la cartera y los controles táctiles.

@@ -285,3 +285,38 @@ module.exports.consumePasswordReset=consumePasswordReset
 module.exports.invalidatePasswordReset=invalidatePasswordReset
 module.exports.playCasinoRound=playCasinoRound
 module.exports.getCasinoHistory=getCasinoHistory
+
+async function getArcadeProgress(accountId) {
+  return (await pool.query('SELECT level_id FROM arcade_progress WHERE account_id=$1 ORDER BY completed_at',[accountId])).rows.map(row=>row.level_id)
+}
+async function startArcadeRun(id,accountId,levelId,guardian) {
+  // Starting a new attempt invalidates abandoned attempts; completed results remain retryable.
+  const client=await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT id FROM accounts WHERE id=$1 FOR UPDATE',[accountId])
+    await client.query('DELETE FROM arcade_runs WHERE account_id=$1 AND finished_at IS NULL',[accountId])
+    await client.query('INSERT INTO arcade_runs (id,account_id,level_id,guardian) VALUES ($1,$2,$3,$4)',[id,accountId,levelId,guardian])
+    await client.query('COMMIT')
+  } catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
+}
+async function getArcadeRun(id,accountId) {
+  return (await pool.query('SELECT * FROM arcade_runs WHERE id=$1 AND account_id=$2',[id,accountId])).rows[0]
+}
+async function finishArcadeRun(id,accountId,reward) {
+  const client=await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT id FROM accounts WHERE id=$1 FOR UPDATE',[accountId])
+    const run=(await client.query('SELECT * FROM arcade_runs WHERE id=$1 AND account_id=$2 FOR UPDATE',[id,accountId])).rows[0]
+    if(!run){await client.query('ROLLBACK');return null}
+    if(run.finished_at){await client.query('COMMIT');return run.reward}
+    const first=await client.query('INSERT INTO arcade_progress (account_id,level_id) VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING level_id',[accountId,run.level_id])
+    const result={firstCompletion:first.rowCount===1,reward:first.rowCount?reward:{gold:0,jade:0,obsidian:0}}
+    if(first.rowCount)await client.query(`INSERT INTO player_wallets (account_id,gold,jade,obsidian) VALUES ($1,$2,$3,$4)
+      ON CONFLICT (account_id) DO UPDATE SET gold=player_wallets.gold+EXCLUDED.gold,jade=player_wallets.jade+EXCLUDED.jade,obsidian=player_wallets.obsidian+EXCLUDED.obsidian,updated_at=now()`,[accountId,reward.gold,reward.jade,reward.obsidian])
+    await client.query('UPDATE arcade_runs SET finished_at=now(),reward=$2 WHERE id=$1',[id,JSON.stringify(result)])
+    await client.query('COMMIT');return result
+  }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
+}
+Object.assign(module.exports,{getArcadeProgress,startArcadeRun,getArcadeRun,finishArcadeRun})

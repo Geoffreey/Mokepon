@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#071914"><meta name="description" content="Guardianes del Mayab, aventura multijugador inspirada en Guatemala."><title>Guardianes del Mayab</title><link rel="stylesheet" href="./styles.css?v=20261122-5"></head>
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#071914"><meta name="description" content="Guardianes del Mayab, aventura multijugador inspirada en Guatemala."><title>Guardianes del Mayab</title><link rel="stylesheet" href="./styles.css?v=20261122-9"></head>
 <body><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div><main class="game-shell">
 <header class="brand"><span class="brand-mark">✦</span><div><p class="eyebrow">Crónicas de Guatemala</p><p class="brand-name">Guardianes del Mayab</p></div><span id="jugador-badge" class="player-badge" hidden></span><button id="boton-cerrar-sesion" class="ghost-button" type="button" hidden>Cerrar sesión</button></header>
 
@@ -21,7 +21,42 @@
 <section id="seleccionar-modo" class="game-panel lobby-panel" hidden>
   <div class="intro"><span class="chapter">Elige tu camino</span><h1 class="titulo">¿Cómo quieres jugar?</h1><p class="subtitulo">Combate con otros guardianes, entrena contra la máquina o avanza en tu propia crónica.</p></div>
   <section class="profile-card"><div><span class="chapter">Tus recursos</span><strong id="modo-nivel">Nivel 1</strong></div><div class="profile-stats currency-list"><span><img src="./assets/currency-jade.png" alt="Jade"><b id="cartera-jade">0</b> jades</span><span><img src="./assets/currency-obsidian.png" alt="Obsidiana"><b id="cartera-obsidiana">0</b> obsidiana</span><span><img src="./assets/currency-gold.png" alt="Oro"><b id="cartera-oro">0</b> oro</span></div></section>
-  <div class="mode-grid"><button class="mode-card" data-mode="pvp"><span class="mode-icon">⚔️</span><strong>Duelo en línea</strong><small>Entra a una arena con otros jugadores.</small></button><button class="mode-card" data-mode="maquina"><span class="mode-icon">🗿</span><strong>Contra la máquina</strong><small>Entrena sin esperar a otro jugador.</small></button><button class="mode-card" data-mode="misiones"><span class="mode-icon">🧭</span><strong>Misiones</strong><small>Supera desafíos y consigue recompensas.</small></button><button class="mode-card casino-mode" data-mode="casino"><span class="mode-icon">🎲</span><strong>La Cueva de la Fortuna</strong><small>Apuesta recursos virtuales en los Dados del Ajaw.</small></button></div>
+  <div class="mode-grid"><button class="mode-card arcade-mode" data-mode="arcade"><span class="mode-icon">🌿</span><strong>Arcade · Senderos del Mayab</strong><small>Salta, reúne tesoros y desafía guardianes en tiempo real.</small></button><button class="mode-card" data-mode="pvp"><span class="mode-icon">⚔️</span><strong>Duelo en línea</strong><small>Entra a una arena con otros jugadores.</small></button><button class="mode-card" data-mode="maquina"><span class="mode-icon">🗿</span><strong>Contra la máquina</strong><small>Entrena sin esperar a otro jugador.</small></button><button class="mode-card" data-mode="misiones"><span class="mode-icon">🧭</span><strong>Misiones</strong><small>Supera desafíos y consigue recompensas.</small></button><button class="mode-card casino-mode" data-mode="casino"><span class="mode-icon">🎲</span><strong>La Cueva de la Fortuna</strong><small>Apuesta recursos virtuales en los Dados del Ajaw.</small></button></div>
+</section>
+
+
+<section id="arcade-niveles" class="game-panel lobby-panel" hidden>
+  <div class="intro"><span class="chapter">Una aventura en tiempo real</span><h1 class="titulo">Senderos del Mayab</h1><p class="subtitulo">Cada sendero guarda un tesoro. Cada guardián, un desafío.</p></div>
+  <div class="arcade-guide"><span>↔ Muévete</span><span>Espacio · Salta</span><span>J / X · Golpea</span><span>K / Z · Lanza poder</span><span>P · Pausa</span></div>
+  <div id="arcade-lista" class="arcade-levels"></div>
+  <p class="arcade-note">Tres vidas por intento y un punto de control antes del jefe. Los recursos recogidos y el premio se guardan al vencer por primera vez cada pantalla. Puedes repetirla por diversión.</p>
+  <button id="arcade-volver" class="ghost-button" type="button">← Volver a modos</button>
+</section>
+<section id="arcade-juego" class="game-panel arcade-panel" hidden>
+  <div class="arcade-top"><div><span id="arcade-region" class="chapter"></span><h1 id="arcade-titulo"></h1></div><div class="arcade-actions"><button id="arcade-pantalla" class="ghost-button" type="button">Pantalla completa</button><button id="arcade-ayuda" class="ghost-button" type="button">Controles</button><button id="arcade-pausa" class="ghost-button" type="button">Pausar</button><button id="arcade-salir" class="ghost-button" type="button">Salir</button></div></div>
+  <p id="arcade-mando" class="arcade-gamepad-status" role="status">¿Tienes un mando Bluetooth? Conéctalo al celular y pulsa un botón para detectarlo.</p>
+  <section id="arcade-tutorial" class="arcade-tutorial" aria-labelledby="arcade-tutorial-title" hidden>
+    <div id="arcade-tutorial-content" class="arcade-tutorial-content" tabindex="0" role="region" aria-label="Instrucciones del arcade">
+    <span class="chapter">Antes de entrar a la selva</span><h2 id="arcade-tutorial-title">Conoce el poder de tu guardián</h2>
+    <p id="arcade-tutorial-power"></p>
+    <div class="arcade-key-guide">
+      <div><kbd>← →</kbd><kbd>A D</kbd><strong>Muévete</strong><span>Mira hacia tu objetivo para apuntar.</span></div>
+      <div><kbd>Espacio</kbd><kbd>W / ↑</kbd><strong>Salta</strong><span>Suelta la tecla antes de volver a saltar.</span></div>
+      <div><kbd>J</kbd><kbd>X</kbd><strong>Golpea de cerca</strong><span>Defiéndete cuando un enemigo se acerque.</span></div>
+      <div><kbd>K</kbd><kbd>Z</kbd><strong>Lanza tu poder</strong><span>Ataca a distancia, también mientras saltas.</span></div>
+      <div><kbd>P</kbd><kbd>Esc</kbd><strong>Pausa</strong><span>Puedes volver a ver esta guía en Controles.</span></div>
+    </div>
+    <details class="arcade-extra-guide"><summary>Cómo jugar con un mando Bluetooth</summary><p class="arcade-controller-guide"><strong>Mando Bluetooth:</strong> palanca izquierda o cruceta para moverte · A / ✕ para saltar y confirmar · X / □ para golpear · B / ○ o RT / R2 para lanzar · Start / Options para pausar. Conecta el mando desde los ajustes del dispositivo y pulsa un botón. Requiere un mando reconocido por el navegador con distribución estándar.</p></details>
+    <details class="arcade-extra-guide"><summary>Conoce los peligros del sendero</summary><p class="arcade-wildlife-note"><strong>Peligros del sendero:</strong> tarántulas, serpientes, alacranes y chichicaste. Evita tocarlos; el chichicaste es una planta urticante y no puedes aplastarla saltando. Despéjala con tu poder.</p></details>
+    <p class="arcade-note">Recoge oro, jade y obsidiana. Tienes tres vidas y un punto de control antes del jefe. En celular, gira el dispositivo horizontalmente para jugar con ambos pulgares. También puedes usar un mando compatible. Si se desconecta durante el juego, la partida se pausa.</p>
+    </div>
+    <div class="arcade-tutorial-footer"><span>Cuando estés listo, comienza tu aventura.</span>
+    <button id="arcade-tutorial-play" class="primary-button" type="button">¡Entrar al sendero!</button></div>
+  </section>
+  <div class="arcade-hud"><span id="arcade-vida"></span><span id="arcade-bolsa"></span><span id="arcade-poder"></span><span id="arcade-objetivo">Encuentra al guardián →</span></div>
+  <div class="arcade-viewport"><canvas id="arcade-canvas" width="960" height="540" tabindex="0" aria-label="Plataformas del Mayab. Flechas o A y D para moverse, espacio para saltar, J o X para golpear, K o Z para lanzar un poder y P para pausar."></canvas><div id="arcade-overlay" class="arcade-overlay" hidden><span class="chapter" id="arcade-overlay-kicker">Senderos del Mayab</span><h2 id="arcade-overlay-title"></h2><p id="arcade-overlay-copy" role="status"></p><div class="arcade-overlay-actions"><button id="arcade-continuar" class="primary-button" type="button">Continuar</button><button id="arcade-reintentar" class="secondary-button" type="button" hidden>Reintentar</button><button id="arcade-mapa" class="ghost-button" type="button">Ver pantallas</button></div></div></div>
+  <div class="arcade-controls" aria-label="Controles táctiles"><div><button type="button" data-arcade-input="1" aria-label="Mover a la izquierda">←</button><button type="button" data-arcade-input="2" aria-label="Mover a la derecha">→</button></div><small>Salta sobre enemigos · Esquiva la onda del jefe</small><div><button type="button" data-arcade-input="4" aria-label="Saltar">↑ <span>Saltar</span></button><button type="button" data-arcade-input="8" aria-label="Golpear de cerca">✦ <span>Golpear</span></button><button type="button" data-arcade-input="16" aria-label="Lanzar poder">◈ <span>Lanzar</span></button></div></div>
+  <p class="arcade-note">Teclado: ← → / A D · Espacio / W / ↑ para saltar · J / X para golpear · K / Z para lanzar poder · P / Esc para pausar. También puedes usar los botones táctiles.</p>
 </section>
 
 <section id="casino-fortuna" class="game-panel casino-panel" hidden>
@@ -67,4 +102,4 @@
   <div id="mensajes" class="message-card" aria-live="polite"><span class="message-kicker">El oráculo dice</span><p id="resultado">Elige tu secuencia</p><section id="reiniciar" hidden><button id="boton-reiniciar" class="secondary-button" type="button">Volver a la arena</button></section><button id="boton-abandonar-batalla" class="ghost-button battle-exit" type="button" hidden>Salir de la batalla</button></div>
   <div class="ataques"><div class="ataques-jugador score-card"><span class="score-label">Tú · <b id="nombre-combate-jugador"></b></span><img id="imagen-combate-jugador" class="battle-guardian" alt=""><p id="mascota-jugador" class="guardian-name"></p><p id="vidas-jugador" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-jugador" class="attack-history"></div></div><div class="versus">VS</div><div class="ataques-enemigo score-card"><span class="score-label">Rival · <b id="nombre-combate-enemigo"></b></span><img id="imagen-combate-enemigo" class="battle-guardian" alt=""><p id="mascota-enemigo" class="guardian-name"></p><p id="vidas-enemigo" class="score">0</p><span class="score-caption">victorias</span><div id="ataques-del-enemigo" class="attack-history"></div></div></div>
 </section>
-</main><script src="./js/mokepon.js?v=20261122-5"></script></body></html>
+</main><script src="./js/arcade-engine.js?v=20261122-2"></script><script src="./js/mokepon.js?v=20261122-7"></script><script src="./js/arcade-gamepad.js?v=20261122-1"></script><script src="./js/arcade.js?v=20261122-4"></script></body></html>

@@ -5,6 +5,7 @@ const { randomUUID, randomInt } = require("crypto")
 const { scryptSync, timingSafeEqual, createHash } = require("crypto")
 const nodemailer = require("nodemailer")
 const db = require("./db")
+const arcade = require("./public/js/arcade-engine")
 const app = express()
 const PORT = process.env.PORT || 8080
 const esProduccion = process.env.NODE_ENV === "production"
@@ -114,6 +115,7 @@ app.use((req, res, next) => {
   if (origenPublico) return res.redirect(308, new URL(req.originalUrl, origenPublico).toString())
   return res.status(426).json({ error: "Esta aplicación requiere una conexión HTTPS segura." })
 })
+app.use("/arcade/finalizar",express.json({limit:"128kb",strict:true}))
 app.use(express.json({ limit:"4kb", strict:true }))
 app.use(express.static("public"))
 const limiteUnirse = rateLimit({ windowMs:600000, limit:30, standardHeaders:"draft-8", legacyHeaders:false })
@@ -204,6 +206,33 @@ app.get("/auth/perfil",autenticarCuenta,async(req,res,next)=>{try{res.set("Cache
 app.get("/aventura/progreso",autenticarCuenta,async(req,res,next)=>{try{
   const [progress,stats]=await Promise.all([db.getAdventureProgress(req.cuenta.id),estadisticas(req.cuenta)]),completed=new Set(progress.completedMissions)
   res.set("Cache-Control","no-store");res.json({...progress,guardianesPremium:catalogoPremium(stats),missions:MISIONES.map((mission)=>({...mission,unlocked:!mission.requires||completed.has(mission.requires),completed:completed.has(mission.id)}))})
+}catch(error){next(error)}})
+app.get("/arcade/progreso",autenticarCuenta,async(req,res,next)=>{try{
+  const completed=await db.getArcadeProgress(req.cuenta.id)
+  res.set("Cache-Control","no-store");res.json({levels:arcade.LEVELS.map((level,i)=>({...level,completed:completed.includes(level.id),unlocked:i===0||completed.includes(arcade.LEVELS[i-1].id)}))})
+}catch(error){next(error)}})
+app.post("/arcade/iniciar",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const level=arcade.LEVELS.find(l=>l.id===req.body?.levelId),guardian=req.body?.guardian
+  if(!level||!MOKEPONES_VALIDOS.has(guardian))return res.status(400).json({error:"Elige un nivel y un guardián válidos."})
+  if(!guardianDesbloqueado(guardian,await estadisticas(req.cuenta)))return res.status(403).json({error:"Este guardián todavía está bloqueado."})
+  const index=arcade.LEVELS.indexOf(level),completed=await db.getArcadeProgress(req.cuenta.id)
+  if(index>0&&!completed.includes(arcade.LEVELS[index-1].id))return res.status(403).json({error:"Supera la pantalla anterior para abrir este sendero."})
+  const id=randomUUID();await db.startArcadeRun(id,req.cuenta.id,level.id,guardian)
+  res.set("Cache-Control","no-store");res.status(201).json({id,levelId:level.id})
+}catch(error){next(error)}})
+app.post("/arcade/finalizar",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
+  const id=req.body?.id
+  if(typeof id!=="string"||!/^[0-9a-f-]{36}$/i.test(id))return res.status(400).json({error:"Partida inválida."})
+  const run=await db.getArcadeRun(id,req.cuenta.id)
+  if(!run)return res.status(404).json({error:"La partida ya no está disponible. Inicia otro intento."})
+  if(run.finished_at)return res.json(run.reward)
+  if(Date.now()-new Date(run.created_at).getTime()>2*60*60*1000)return res.status(410).json({error:"La partida expiró. Inicia otro intento."})
+  let state
+  try{state=arcade.replay(run.level_id,req.body?.inputs,run.guardian)}catch{return res.status(400).json({error:"No se pudo verificar la partida."})}
+  if(state.status!=="won"||state.tick/60*1000>Date.now()-new Date(run.created_at).getTime()+2000)return res.status(400).json({error:"La partida no registra una victoria válida."})
+  const result=await db.finishArcadeRun(id,req.cuenta.id,arcade.reward(state))
+  if(!result)return res.status(409).json({error:"Se inició otro intento. Vuelve a jugar esta pantalla."})
+  res.set("Cache-Control","no-store");res.json(result)
 }catch(error){next(error)}})
 app.post("/aventura/combate",limiteAcciones,autenticarCuenta,async(req,res,next)=>{try{
   const mode=req.body?.mode,guardian=req.body?.guardian,attacks=req.body?.attacks,clientBattleId=String(req.body?.clientBattleId||"")
