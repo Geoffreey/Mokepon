@@ -323,3 +323,86 @@ Una desconexión no elimina el token guardado. Solo una cuenta realmente vencida
 o revocada solicita volver a iniciar sesión. La recuperación no recrea salas
 ni combates perdidos por un reinicio; permite elegir otra sala sin autenticarse
 de nuevo. El cierre de sesión explícito invalida cualquier recuperación pendiente.
+
+## Carreras · Rutas del Mayab
+
+El menú **Carreras** incorpora karts con el elenco y las apariencias ya
+existentes. Conserva los requisitos de acceso de cada guardián, incluidos los
+privilegios del administrador. Hay tres circuitos de tres vueltas: Ceiba
+Esmeralda (Selva), Espejo de Atitlán (Lago) y Corona de Fuego (Volcán).
+
+- **En línea:** salas públicas de 2 a 6 jugadores reales. Todos pulsan
+  **Estoy listo** y el anfitrión inicia. Si el anfitrión sale antes de comenzar,
+  el siguiente corredor toma su lugar. La lista permite retomar la carrera
+  activa tras recargar. Durante la carrera no hay pausa; 15 segundos sin
+  conexión cuentan como abandono.
+- **Contra la máquina:** elige circuito y de 2 a 6 participantes en total,
+  incluyendo a tu jugador. Puedes pausar y reanudar.
+- **Arcade:** copa de los tres circuitos contra la máquina. Cada carrera
+  reparte 10, 7, 5, 3, 2 y 1 puntos según el puesto; gana la mayor suma.
+  **Siguiente circuito** conserva los puntos y los corredores.
+
+Teclado: A/D o ←/→ giran, W/↑ acelera, S/↓ frena, Espacio/K/Z activa el turbo,
+Shift/L derrapa y P/Escape pausa los modos de máquina. En mando: palanca o
+cruceta para girar, A/✕ acelera, X/□ frena, B/○ o RT/R2 activa turbo,
+LB/RB/L1/R1 derrapa y Start/Options pausa. Los botones táctiles permiten
+acciones simultáneas. La cámara sigue al kart desde atrás con carretera en perspectiva, curvas y
+desniveles. Se adapta a vertical, horizontal y escritorio, respetando áreas
+seguras. Un minimapa muestra la ubicación de los corredores.
+
+Recoger jade aumenta el botín de carrera y recarga turbo. Las cajas sorpresa
+otorgan un escudo de jade, turbo ancestral con tres jades, o cinco jades y
+una trampa de obsidiana que queda detrás del corredor durante 20 segundos.
+El escudo absorbe un impacto. Las plataformas verdes aceleran; mantener un
+derrape mientras giras y soltarlo al cargarlo concede mini turbo. Rocas,
+troncos, fuego y aceite frenan o hacen perder el control temporalmente.
+El arranque alcanza velocidad máxima en unos tres cuartos de segundo;
+cada circuito tiene 60 000 unidades y tres vueltas, con más recorrido y
+objetos que la versión cenital. El botín mostrado pertenece a la carrera. La clasificación la decide el servidor,
+con simulación compartida de 60 Hz en `public/js/racing-engine.js`; el cliente
+solo envía controles con secuencias. Se rechazan puestos o vueltas enviados
+por el cliente. Después del primer finalista quedan 40 segundos para llegar;
+la carrera tiene un límite de cinco minutos activos.
+
+Las salas y las copas viven en memoria y se pierden al reiniciar el servicio.
+No se abonan monedas, estadísticas de duelo ni desbloqueos por las carreras.
+Los puntos de copa duran esa sesión. Las salas en espera vencen a los 60
+segundos sin actividad; los resultados se retienen cinco minutos. Los modos
+contra la máquina también requieren conexión al servidor. No hay migraciones
+nuevas de base de datos. Reinicia el servidor Node tras actualizar los archivos.
+
+Verificación: `docker exec mokepon node --test` incluye simulación de los ocho
+guardianes en los tres circuitos, cupos, controles antiguos, pausa, desconexión,
+copa, autorización de API y acceso a guardianes. El mando físico en iPhone /
+DualSense requiere una comprobación con ese dispositivo.
+
+La cámara interpola las correcciones del servidor; el cliente predice controles
+a 60 pasos por segundo, compensa hasta ocho pasos de latencia y dibuja con
+`requestAnimationFrame`. Los estados en línea incluyen los controles reales
+de los rivales; no se presupone que todos estén acelerando. El renderizado
+de perspectiva vive en `public/js/racing-renderer.js`.
+
+### Karts, escenario y conducción manual
+
+Cada guardián tiene carrocería, ornamentación y colores propios: obsidiana y
+motivos de jaguar para B'alam, plumas para Iq' y Tz'ikin, piedra y maíz para
+Kabrak, escamas para Sipak, madera para B'atz, fuego para Cadejo y luna para
+Tacuatzin. Un recorte individual de la cabeza queda dentro del borde de jade
+del asiento; no se dibuja el cuerpo completo sobre el vehículo.
+
+Estelas con glifos, cabezas de piedra y templos escalonados rodean los tres
+circuitos. Los seis obstáculos fijos por vuelta se concentran en tres tramos
+que suman menos del 20 % de la pista. Las trampas de obsidiana se colocan en
+estos mismos tramos; el resto deja espacio para conducir y recoger premios.
+
+La aceleración es manual: W/↑, A/✕ del mando o el botón táctil Acelerar.
+Mantenerlo durante la cuenta atrás permite salir al mismo tiempo que los bots.
+El jugador y la máquina comparten aceleración y velocidad punta; los bots usan
+turbo en ráfagas espaciadas después de la salida. No hay aceleración automática.
+
+`racing-sync.js` conserva la posición y velocidad predichas al recibir un
+estado, distribuye pequeñas correcciones entre los pasos de simulación y
+respeta de inmediato finales y cambios grandes del servidor. Las marcas de la
+carretera están ancladas al circuito y el cambio de perspectiva del turbo es
+gradual. El canvas expone `data-render-fps` y `data-render-ms` para medir el
+dibujo en las revisiones; no añade indicadores técnicos a la pantalla del juego.

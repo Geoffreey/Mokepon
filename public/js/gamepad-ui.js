@@ -29,7 +29,7 @@
       const selector='button,a[href],input:not([type="hidden"]),textarea,select,summary,label[for]'
       const roots=root===modal?[root]:[root,...doc.querySelectorAll('.brand,#room-dock')].filter(Boolean)
       for(let el of roots.flatMap(part=>Array.from(part.querySelectorAll(selector)))){
-        if(el.matches('[data-arcade-input],[data-duel-input],.map-controls button'))continue
+        if(el.matches('[data-race-input],[data-arcade-input],[data-duel-input],.map-controls button'))continue
         if(el.matches('input[type="radio"],input[type="checkbox"]')){
           if(el.disabled)continue
           el=Array.from(doc.querySelectorAll('label[for]')).find(label=>label.htmlFor===el.id)||el
@@ -101,7 +101,7 @@
     }
     function back(root){
       if(modal){closeModal();return}
-      const ids=['recompensas-volver','arcade-mapa','volver-modos-guardian','volver-modos-lobby','volver-modos-misiones','volver-modos-casino','arcade-volver','boton-volver-login','boton-abandonar-batalla','arcade-salir','boton-salir-sala','duel-exit']
+      const ids=['race-exit','race-menu-back','recompensas-volver','arcade-mapa','volver-modos-guardian','volver-modos-lobby','volver-modos-misiones','volver-modos-casino','arcade-volver','boton-volver-login','boton-abandonar-batalla','arcade-salir','boton-salir-sala','duel-exit']
       const el=ids.map(id=>doc.getElementById(id)).find(el=>el&&(root.contains(el)||el.id==='boton-salir-sala')&&visible(el))
       if(el)el.click()
     }
@@ -110,7 +110,7 @@
       const root=getRoot(),list=targets(root)
       if(root!==lastRoot){lastRoot=root;focused=null;lastDirection=null}
       if(!list.includes(focused)){
-        const primary=list.find(el=>['arcade-tutorial-play','arcade-continuar','duel-start','duel-resume','duel-return'].includes(el.id))
+        const primary=list.find(el=>['race-ready','race-start','race-next','race-again','arcade-tutorial-play','arcade-continuar','duel-start','duel-resume','duel-return'].includes(el.id))
         mark(primary||list.find(el=>el.matches('input:checked'))||list[0])
       }
       if(pad.backPressed){back(root);reader.blockActions();return}

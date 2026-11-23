@@ -192,6 +192,29 @@ async function guardarCombateTiempoReal(match){
   const economy=match.mode==='maquina'?await db.recordMachineBattle({id:match.id,accountId:match.participants[0].accountId,outcome:outcome(0),reward:MACHINE_WIN_REWARD,dailyLimit:MACHINE_DAILY_REWARD_LIMIT}):null
   return [{outcome:outcome(0),reason:match.state.reason,economy,missionResult}]
 }
+const RacingService=require('./server/racing-service')
+const racingService=new RacingService()
+setInterval(()=>racingService.advance(),1000/60).unref()
+const racingRoute=fn=>async(req,res,next)=>{try{res.set('Cache-Control','no-store');await fn(req,res)}catch(error){if(error.status)return res.status(error.status).json({error:error.message});next(error)}}
+async function racingPlayer(req){
+ const guardian=req.body?.guardian,skin=req.body?.skin||'clasico'
+ if(!MOKEPONES_VALIDOS.has(guardian))throw Object.assign(new Error('Guardián inválido.'),{status:400})
+ const {stats,progress,account}=await cargarAcceso(req.cuenta.id,req.cuenta)
+ if(!guardianDesbloqueado(guardian,stats,progress,account))throw Object.assign(new Error('Este guardián todavía está bloqueado.'),{status:403})
+ if(skin!=='clasico'&&!(guardian==="B'alam"&&skin==='balam-nocturno'&&(progress.admin||progress.unlocks.some(u=>u.type==='skin'&&u.id===skin))))throw Object.assign(new Error('Aspecto bloqueado.'),{status:403})
+ return {accountId:req.cuenta.id,name:req.cuenta.nombre,guardian,skin}
+}
+app.get('/carreras/salas',autenticarCuenta,racingRoute((req,res)=>res.json({rooms:racingService.list(),activeId:racingService.active.get(req.cuenta.id)||null})))
+app.post('/carreras/crear',limiteAcciones,autenticarCuenta,racingRoute(async(req,res)=>res.status(201).json(racingService.create(await racingPlayer(req),req.body))))
+app.post('/carreras/:id/unirse',limiteAcciones,autenticarCuenta,racingRoute(async(req,res)=>res.json(racingService.join(req.params.id,await racingPlayer(req)))))
+app.post('/carreras/:id/control',limiteCombate,autenticarCuenta,racingRoute((req,res)=>{
+ const b=req.body||{}
+ if(!Object.keys(b).every(k=>['seq','input','ready','start','pause'].includes(k))||!Number.isSafeInteger(b.seq)||b.seq<0||b.seq>1e9||!Number.isInteger(b.input)||b.input<0||b.input>63||['ready','start','pause'].some(k=>b[k]!==undefined&&typeof b[k]!=='boolean'))return res.status(400).json({error:'Controles inválidos.'})
+ res.json(racingService.receive(req.params.id,req.cuenta.id,b))
+}))
+app.get('/carreras/:id',autenticarCuenta,racingRoute((req,res)=>{const {room,side}=racingService.member(req.params.id,req.cuenta.id);room.players[side].seen=Date.now();res.json(racingService.snapshot(room,side))}))
+app.post('/carreras/:id/siguiente',limiteAcciones,autenticarCuenta,racingRoute((req,res)=>res.json(racingService.next(req.params.id,req.cuenta.id))))
+app.post('/carreras/:id/salir',limiteAcciones,autenticarCuenta,racingRoute((req,res)=>{racingService.leave(req.params.id,req.cuenta.id);res.status(204).end()}))
 app.post('/combate/iniciar',limiteAcciones,autenticarJugador,async(req,res,next)=>{try{
   const mode=req.body?.mode,guardian=req.body?.guardian,skin=req.body?.skin||'clasico'
   if(!['maquina','mision'].includes(mode)||!MOKEPONES_VALIDOS.has(guardian))return res.status(400).json({error:'Combate inválido.'})

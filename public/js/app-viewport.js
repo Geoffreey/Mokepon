@@ -11,7 +11,10 @@
     if(!height||!width)return
     root.style.setProperty('--app-height',`${height}px`)
     root.style.setProperty('--app-width',`${width}px`)
-    document.body.classList.toggle('app-landscape',window.matchMedia('(orientation: landscape)').matches&&height<=620)
+    const landscape=width>height&&height<=620
+    document.body.classList.toggle('app-landscape',landscape)
+    document.body.classList.toggle('race-landscape',landscape)
+    window.dispatchEvent(new CustomEvent('mayab:viewportchange',{detail:{width,height,landscape}}))
     document.body.classList.toggle('app-standalone',Boolean(window.navigator.standalone||window.matchMedia('(display-mode: standalone)').matches))
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(update)}

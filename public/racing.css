@@ -1,0 +1,43 @@
+.racing-mode{background:linear-gradient(140deg,#1a493c,#162b28)!important;border-color:#bdcf8377!important}.racing-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:12px 0}.racing-options label{display:grid;gap:8px;color:var(--gold);font-size:13px}.racing-options select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:#102b24;color:#f1e9ce;font:inherit;font-size:16px}.racing-options select:disabled{opacity:.5}#race-rooms{overflow:auto;min-height:0;flex:1;align-content:start}#race-rooms button{min-height:70px}.racing-hud{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;margin:4px 0 10px;color:#eedba4}.racing-hud label{display:flex;align-items:center;gap:8px}.racing-hud progress{width:100px;height:8px;accent-color:#88e6b8}.racing-viewport{background:#071e19;min-height:120px}.racing-viewport canvas{width:100%;height:100%;object-fit:contain;touch-action:none}.racing-copy{overflow:auto;max-height:100%;min-height:0;color:#d6dfc3;font-size:13px;line-height:1.55;max-width:680px}.racing-copy p{margin:5px 0}.racing-you{color:#ffe5a1!important;font-weight:700}.racing-panel .arcade-overlay{overflow:auto;gap:10px;padding:20px}.racing-panel .arcade-overlay h2{margin:0}.racing-controls button{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}.racing-controls button *{pointer-events:none}.racing-controls button[data-race-input="4"]{background:#436a47}.racing-controls button[data-race-input="16"]{background:#766037}.racing-panel .arcade-overlay-actions{flex-shrink:0;flex-wrap:wrap}.racing-panel #race-status{min-height:15px}
+@media(max-width:760px){.racing-options{grid-template-columns:1fr;gap:10px}.racing-options label{gap:4px}.racing-options select{padding:9px}.racing-hud{font-size:11px;gap:6px}.racing-hud progress{width:70px}.racing-controls>div:last-child{display:grid;grid-template-columns:repeat(2,49px);grid-template-rows:repeat(2,49px);gap:5px}.racing-copy{font-size:12px}.racing-panel .arcade-overlay{padding:12px}.racing-panel .arcade-overlay h2{font-size:23px}.racing-panel .arcade-overlay-actions button{font-size:12px;padding:9px 12px}}
+body.app-landscape .racing-options{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:4px 0}body.app-landscape .racing-hud{font-size:10px;margin:0 0 3px;flex-wrap:nowrap}body.app-landscape .racing-panel .arcade-viewport{min-height:0}body.app-landscape .racing-controls>div:last-child{display:grid;grid-template-columns:repeat(2,54px);grid-template-rows:repeat(2,46px);gap:4px}body.app-landscape .racing-controls button{width:52px;height:44px}body.app-landscape .racing-controls button span{font-size:8px}body.app-landscape .racing-copy{font-size:11px;line-height:1.3}body.app-landscape .racing-panel .arcade-overlay{padding:8px;gap:5px}body.app-landscape .racing-panel .arcade-overlay h2{font-size:21px}
+/* Racing owns its landscape shell, including short iPhones and browser toolbars. */
+body.arcade-active.race-landscape{overflow:hidden;overscroll-behavior:none}
+body.arcade-active.race-landscape .game-shell{width:100%;padding:0}
+body.arcade-active.race-landscape #carreras-juego:not([hidden]){position:fixed;inset:0 auto auto 0;z-index:30;width:var(--app-width,100vw);height:var(--app-height,100dvh);max-width:none;min-height:0;display:flex;flex-direction:column;gap:0;border:0;border-radius:0;padding:max(5px,var(--safe-top)) max(10px,var(--safe-right)) max(5px,var(--safe-bottom)) max(10px,var(--safe-left));overflow:hidden;background:#071c19;box-shadow:none}
+body.race-landscape .racing-panel .arcade-top{display:flex;flex:0 0 32px;min-height:32px;flex-wrap:nowrap;gap:8px;margin:0}
+body.race-landscape .racing-panel .arcade-top>div:first-child{flex:1;min-width:0}
+body.race-landscape .racing-panel .arcade-top .chapter{display:none}
+body.race-landscape .racing-panel .arcade-top h1{font-size:15px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+body.race-landscape .racing-panel .arcade-actions{display:flex;flex:0 0 auto;width:auto;gap:4px;margin:0}
+body.race-landscape .racing-panel .arcade-actions button{min-width:0;min-height:30px;padding:5px 8px;font-size:10px}
+body.race-landscape .racing-panel #race-status{flex:0 0 14px;min-height:14px;line-height:14px;font-size:9px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin:0}
+body.race-landscape .racing-panel .racing-hud{flex:0 0 22px;min-height:22px;display:flex;flex-wrap:nowrap;align-items:center;gap:8px;font-size:10px;margin:0}
+body.race-landscape .racing-panel #race-position{min-width:32px}
+body.race-landscape .racing-panel #race-loot{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+body.race-landscape .racing-panel .racing-hud label{flex:none}
+body.race-landscape .racing-panel .racing-hud progress{width:65px}
+body.race-landscape .racing-panel .racing-viewport{position:relative;flex:1 1 0;min-height:0;width:100%;border:0;border-radius:7px;overflow:hidden}
+body.race-landscape .racing-panel .racing-viewport canvas{position:absolute;inset:0;display:block;width:100%;height:100%;max-width:none;max-height:none;aspect-ratio:auto;object-fit:fill}
+body.race-landscape .racing-panel .racing-controls{position:absolute;z-index:4;inset:auto max(14px,var(--safe-right)) max(10px,var(--safe-bottom)) max(14px,var(--safe-left));display:flex;align-items:flex-end;justify-content:space-between;gap:0;padding:0;margin:0;pointer-events:none}
+body.race-landscape .racing-panel .racing-controls>div{pointer-events:auto;padding:5px;border-radius:20px;background:#071c1977}
+body.race-landscape .racing-panel .racing-controls>div:first-child{display:flex;gap:7px}
+body.race-landscape .racing-panel .racing-controls>div:last-child{display:grid;grid-template:repeat(2,48px)/repeat(2,54px);gap:5px}
+body.race-landscape .racing-panel .racing-controls button{width:54px;height:48px;min-width:44px;min-height:44px;border-radius:16px;font-size:23px}
+body.race-landscape .racing-panel .racing-controls button span{font-size:8px}
+body.race-landscape .racing-panel .arcade-overlay{z-index:6;display:flex;flex-direction:column;justify-content:flex-start;gap:7px;padding:10px clamp(14px,8vw,90px);overflow:hidden}
+body.race-landscape .racing-panel .arcade-overlay[hidden]{display:none}
+body.race-landscape .racing-panel .arcade-overlay>.chapter{display:none}
+body.race-landscape .racing-panel .arcade-overlay h2{flex:none;max-width:100%;font-size:21px;line-height:1.15;margin:0}
+body.race-landscape .racing-panel .racing-copy{flex:1 1 auto;min-height:0;max-height:none;width:100%;overflow-y:auto;overscroll-behavior:contain;font-size:11px;line-height:1.35}
+body.race-landscape .racing-panel .racing-copy p{font-size:11px;line-height:1.35;margin:3px 0}
+body.race-landscape .racing-panel .arcade-overlay-actions{flex:0 0 auto;min-height:40px;display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;width:100%;margin:0}
+body.race-landscape .racing-panel .arcade-overlay-actions button{min-width:0;min-height:40px;width:auto;padding:8px 16px;font-size:12px;margin:0}
+body.race-landscape .racing-panel:has(#race-overlay:not([hidden])) .racing-controls{visibility:hidden}
+body.race-landscape #carreras-menu .racing-options{flex:none;gap:10px;margin:5px 0}
+body.race-landscape #carreras-menu .racing-options label{font-size:11px;gap:4px}
+body.race-landscape #carreras-menu .racing-options select{padding:7px 9px;min-width:0}
+body.race-landscape #carreras-menu #race-mode-note{flex:none;font-size:10px;line-height:1.35;margin:4px 0}
+body.race-landscape #carreras-menu #race-menu-status{flex:none;font-size:11px;margin:4px 0}
+body.race-landscape #carreras-menu #race-menu-status:empty{display:none}
+@media(max-height:350px){body.race-landscape .racing-panel #race-status{display:none}body.race-landscape .racing-panel .arcade-top{flex-basis:30px;min-height:30px}body.race-landscape .racing-panel .racing-hud{flex-basis:20px;min-height:20px}body.race-landscape .racing-panel .arcade-overlay{padding-block:7px;gap:5px}body.race-landscape .racing-panel .arcade-overlay h2{font-size:18px}}
